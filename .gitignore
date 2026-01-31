@@ -103,7 +103,6 @@ logs/
 
 # Models (tracked by DVC)
 models/*.h5
-models/*.tflite
 models/*.onnx
 !models/.gitkeep
 
