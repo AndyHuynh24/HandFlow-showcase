@@ -108,7 +108,6 @@ models/*.onnx
 !models/.gitkeep
 
 # Data (tracked by DVC)
-data/raw/
 data/processed/
 !data/.gitkeep
 !data/raw/.gitkeep
