@@ -1,0 +1,412 @@
+gestures:
+  Left_horizontal_swipe:
+    actions:
+    - type: none
+      value: ''
+      label: ''
+      delay: 0.17
+  Left_swipeup:
+    actions:
+    - type: shortcut
+      value: ctrl+grave
+      label: ''
+      delay: 0.17
+  Left_swipedown:
+    actions:
+    - type: file
+      value: /System/Library/CoreServices/Finder.app
+      label: ''
+      delay: 0.17
+    - type: shortcut
+      value: cmd+shift+h
+      label: ''
+      delay: 0.17
+  Left_thumb_left:
+    actions:
+    - type: none
+      value: ''
+      label: ''
+      delay: 0.17
+  Left_thumb_right:
+    actions:
+    - type: none
+      value: ''
+      label: ''
+      delay: 0.17
+  Left_pointyclick:
+    actions:
+    - type: file
+      value: /System/Applications/Notes.app
+      label: ''
+      delay: 0.17
+  Left_middleclick:
+    actions:
+    - type: shortcut
+      value: cmd+b
+      label: ''
+      delay: 0.17
+  Right_horizontal_swipe:
+    actions:
+    - type: shortcut
+      value: cmd+k+m
+      label: ''
+      delay: 0.17
+  Right_swipeup:
+    actions: []
+  Right_swipedown:
+    actions: []
+  Right_thumb_left:
+    actions:
+    - type: none
+      value: ''
+      label: ''
+      delay: 0.17
+  Right_thumb_right:
+    actions:
+    - type: none
+      value: ''
+      label: ''
+      delay: 0.17
+  Right_pointyclick:
+    actions:
+    - type: none
+      value: ''
+      label: ''
+      delay: 0.17
+  Right_middleclick:
+    actions:
+    - type: none
+      value: ''
+      label: ''
+      delay: 0.17
+macropad_sets:
+- name: Editing
+  set_marker_id: 12
+  buttons:
+    0:
+      type: shortcut
+      value: cmd+c
+      label: Copy
+      actions: []
+    1:
+      type: shortcut
+      value: cmd+v
+      label: Paste
+      actions: []
+    2:
+      type: shortcut
+      value: cmd+z
+      label: Undo
+      actions: []
+    3:
+      type: shortcut
+      value: cmd+shift+z
+      label: Redo
+      actions: []
+    4:
+      type: text
+      value: python main.py
+      label: Run
+      actions: []
+    5:
+      type: shortcut
+      value: cmd+s
+      label: Save
+      actions: []
+    6:
+      type: shortcut
+      value: cmd+a
+      label: Select All
+      actions: []
+    7:
+      type: shortcut
+      value: backspace
+      label: Delete
+      actions: []
+    8:
+      type: none
+      value: ''
+      label: ''
+      actions: []
+    9:
+      type: none
+      value: ''
+      label: ''
+      actions: []
+    10:
+      type: none
+      value: ''
+      label: ''
+      actions: []
+    11:
+      type: none
+      value: ''
+      label: ''
+      actions: []
+- name: Media
+  set_marker_id: 13
+  buttons:
+    0:
+      type: shortcut
+      value: space
+      label: Play/Pause
+      actions: []
+    1:
+      type: shortcut
+      value: cmd+.
+      label: Stop
+      actions: []
+    2:
+      type: shortcut
+      value: cmd+left
+      label: Previous
+      actions: []
+    3:
+      type: shortcut
+      value: cmd+right
+      label: Next
+      actions: []
+    4:
+      type: shortcut
+      value: cmd+down
+      label: Vol -
+      actions: []
+    5:
+      type: shortcut
+      value: cmd+up
+      label: Vol +
+      actions: []
+    6:
+      type: shortcut
+      value: f10
+      label: Mute
+      actions: []
+    7:
+      type: shortcut
+      value: cmd+shift+4
+      label: Screenshot
+      actions: []
+- name: Coding
+  set_marker_id: 14
+  buttons:
+    0:
+      type: none
+      value: ''
+      label: Draw Rect
+      actions:
+      - type: text
+        value: "cv2.rectangle(\n    img,\n    (x1, y1),  # top-left corner\n    (x2,\
+          \ y2),  # bottom-right corner\n    (0, 255, 0),  # color (B, G, R)\n   \
+          \ 2  # thickness (px)\n)\n"
+        label: ''
+        delay: 0.17
+    1:
+      type: none
+      value: ''
+      label: Format
+      actions:
+      - type: text
+        value: '<!-- Text & data -->
+
+          <input type="text" />
+
+          <input type="email" />
+
+          <input type="password" />
+
+          <input type="search" />
+
+          <input type="url" />
+
+          <input type="tel" />
+
+
+          <!-- Numbers & ranges -->
+
+          <input type="number" />
+
+          <input type="range" />
+
+
+          <!-- Date & time -->
+
+          <input type="date" />
+
+          <input type="time" />
+
+          <input type="datetime-local" />
+
+          <input type="month" />
+
+          <input type="week" />
+
+
+          <!-- Selection -->
+
+          <input type="checkbox" />
+
+          <input type="radio" />
+
+
+          <!-- Files & media -->
+
+          <input type="file" />
+
+          <input type="image" />
+
+
+          <!-- Buttons -->
+
+          <input type="button" />
+
+          <input type="submit" />
+
+          <input type="reset" />
+
+
+          <!-- UI / system -->
+
+          <input type="color" />
+
+          <input type="hidden" />
+
+          '
+        label: ''
+        delay: 0.17
+    2:
+      type: none
+      value: ''
+      label: Run
+      actions:
+      - type: shortcut
+        value: cmd+r
+        label: Run
+        delay: 0.17
+    3:
+      type: none
+      value: ''
+      label: Debug
+      actions:
+      - type: shortcut
+        value: cmd+shift+d
+        label: Debug
+        delay: 0.17
+    4:
+      type: none
+      value: ''
+      label: Run app
+      actions:
+      - type: file
+        value: /System/Applications/Utilities/Terminal.app
+        label: ''
+        delay: 0.2
+      - type: text
+        value: cd documents/handkey
+        label: ''
+        delay: 0.3
+      - type: shortcut
+        value: return
+        label: ''
+        delay: 0.17
+      - type: text
+        value: source .venv/bin/activate
+        label: ''
+        delay: 0.3
+      - type: shortcut
+        value: return
+        label: ''
+        delay: 0.17
+      - type: text
+        value: 'arch -arm64 zsh
+
+          '
+        label: ''
+        delay: 0.2
+      - type: shortcut
+        value: return
+        label: ''
+        delay: 0.17
+      - type: text
+        value: python scripts/dataset.py
+        label: ''
+        delay: 0.17
+      - type: shortcut
+        value: return
+        label: ''
+        delay: 0.17
+    5:
+      type: none
+      value: ''
+      label: Replace
+      actions:
+      - type: shortcut
+        value: cmd+h
+        label: Replace
+        delay: 0.17
+    6:
+      type: none
+      value: ''
+      label: Terminal
+      actions:
+      - type: shortcut
+        value: cmd+`
+        label: Terminal
+        delay: 0.17
+    7:
+      type: none
+      value: ''
+      label: Git
+      actions:
+      - type: shortcut
+        value: cmd+shift+g
+        label: Git
+        delay: 0.17
+    8:
+      type: none
+      value: ''
+      label: Draw rect
+      actions:
+      - type: text
+        value: "cv2.rectangle(\n    img,\n    (x1, y1),  # top-left corner\n    (x2,\
+          \ y2),  # bottom-right corner\n    (0, 255, 0),  # color (B, G, R)\n   \
+          \ 2  # thickness (px)\n)"
+        label: ''
+        delay: 0.17
+    9:
+      type: none
+      value: ''
+      label: ''
+      actions: []
+    10:
+      type: none
+      value: ''
+      label: ''
+      actions: []
+    11:
+      type: none
+      value: ''
+      label: ''
+      actions: []
+active_macropad_set: 2
+macropad_enabled: true
+camera:
+  index: 0
+  flip_horizontal: true
+  flip_vertical: true
+  swap_hands: true
+mouse:
+  smoothing: 0.25
+  base_sensitivity: 1.0
+  poll_interval: 0.002
+  inner_deadzone: 0.005
+  outer_deadzone: 0.014
+  activation_threshold: 0.06
+inference:
+  confidence_threshold: 0.4
+  stability_window: 7
+  cooldown_frames: 12
+  min_detection_confidence: 0.5
+  min_tracking_confidence: 0.2
+  model_complexity: 1
+theme: dark
+window_geometry: 1000x700

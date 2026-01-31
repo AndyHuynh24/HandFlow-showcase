@@ -1,0 +1,12 @@
+top_left:
+  horizontal: 85.0
+  vertical: -101.0
+top_right:
+  horizontal: 99.0
+  vertical: -104.0
+bottom_right:
+  horizontal: 100.0
+  vertical: -18.0
+bottom_left:
+  horizontal: 86.0
+  vertical: -36.0

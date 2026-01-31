@@ -1,0 +1,36 @@
+# HandFlow Production Dependencies
+# ================================
+# Install with: pip install -r requirements.txt
+
+# Core ML (pinned for compatibility)
+tensorflow==2.16.1
+tensorflow-model-optimization>=0.8.0
+
+# Computer Vision
+opencv-python>=4.8.0
+mediapipe>=0.10.0
+
+# Data Processing (pinned to avoid build issues)
+numpy>=1.24.0,<2.0.0
+pandas>=2.0.0
+scipy>=1.13.0
+
+# System Control
+pyautogui>=0.9.54
+keyboard>=0.13.5
+
+# GUI
+PyQt6>=6.6.0
+
+# Configuration & Utils
+pyyaml>=6.0
+python-dotenv>=1.0.0
+click>=8.1.0
+
+# Experiment Tracking
+wandb>=0.16.0
+
+# macOS specific (for always-on-top corner markers and mouse control)
+# Install with: pip install pyobjc-framework-Cocoa pyobjc-framework-Quartz
+pyobjc-framework-Cocoa>=10.0; sys_platform == 'darwin'
+pyobjc-framework-Quartz>=10.0; sys_platform == 'darwin'

@@ -1,0 +1,155 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>HandFlow Precision Test</title>
+    <style>
+        body {
+            font-family: 'Segoe UI', system-ui, sans-serif;
+            background: #1a1a1a;
+            color: white;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            height: 100vh;
+            margin: 0;
+            overflow: hidden;
+        }
+
+        #controls {
+            margin: 20px;
+            padding: 15px;
+            background: #333;
+            border-radius: 10px;
+            display: flex;
+            gap: 20px;
+            align-items: center;
+            box-shadow: 0 4px 6px rgba(0,0,0,0.3);
+            z-index: 100;
+        }
+
+        #size-value {
+            font-weight: bold;
+            color: #00ff88;
+            min-width: 60px;
+        }
+
+        #grid-container {
+            flex: 1;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            width: 100%;
+        }
+
+        .grid {
+            display: grid;
+            grid-template-columns: repeat(3, 1fr);
+            gap: 20px;
+            transition: all 0.2s ease;
+        }
+
+        .target-btn {
+            background: #444;
+            border: 2px solid #666;
+            color: #fff;
+            cursor: pointer;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            font-size: 14px;
+            border-radius: 8px;
+            transition: all 0.1s;
+            user-select: none;
+        }
+
+        .target-btn:hover {
+            background: #555;
+            border-color: #888;
+        }
+
+        .target-btn:active, .target-btn.clicked {
+            background: #00ff88 !important;
+            border-color: #00cc6a !important;
+            color: #000 !important;
+            transform: scale(0.95);
+        }
+
+        #log {
+            position: fixed;
+            bottom: 20px;
+            background: rgba(0,0,0,0.8);
+            padding: 10px 20px;
+            border-radius: 20px;
+            font-size: 1.2em;
+            color: #00ff88;
+            border: 1px solid #00ff88;
+            opacity: 0;
+            transition: opacity 0.3s;
+        }
+    </style>
+</head>
+<body>
+
+    <div id="controls">
+        <label for="scaler">Button Size:</label>
+        <input type="range" id="scaler" min="20" max="200" value="100">
+        <span id="size-value">100px</span>
+    </div>
+
+    <div id="grid-container">
+        <!-- 6 Buttons Grid -->
+        <div class="grid" id="button-grid">
+            <button class="target-btn" onclick="logClick(1)">1</button>
+            <button class="target-btn" onclick="logClick(2)">2</button>
+            <button class="target-btn" onclick="logClick(3)">3</button>
+            <button class="target-btn" onclick="logClick(4)">4</button>
+            <button class="target-btn" onclick="logClick(5)">5</button>
+            <button class="target-btn" onclick="logClick(6)">6</button>
+        </div>
+    </div>
+
+    <div id="log">Button 1 Clicked!</div>
+
+    <script>
+        const scaler = document.getElementById('scaler');
+        const sizeValue = document.getElementById('size-value');
+        const buttons = document.querySelectorAll('.target-btn');
+        const log = document.getElementById('log');
+        let logTimeout;
+
+        function updateSize() {
+            const size = scaler.value;
+            sizeValue.textContent = size + 'px';
+            buttons.forEach(btn => {
+                btn.style.width = size + 'px';
+                btn.style.height = size + 'px';
+                // Adjust font size scaling
+                btn.style.fontSize = Math.max(12, size / 3) + 'px';
+            });
+        }
+
+        function logClick(num) {
+            log.textContent = `Button ${num} Clicked! ✅`;
+            log.style.opacity = '1';
+            
+            // Visual flash
+            const btn = buttons[num-1];
+            btn.classList.add('clicked');
+            setTimeout(() => btn.classList.remove('clicked'), 200);
+
+            // Log fade out
+            clearTimeout(logTimeout);
+            logTimeout = setTimeout(() => {
+                log.style.opacity = '0';
+            }, 1500);
+            
+            console.log(`Button ${num} click recorded at ${new Date().toLocaleTimeString()}`);
+        }
+
+        scaler.addEventListener('input', updateSize);
+        updateSize(); // Init
+    </script>
+</body>
+</html>

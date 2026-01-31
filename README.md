@@ -1,6 +1,6 @@
-# 🖐️ Handkey – Gesture-Controlled Computer Interaction
-#### Handkey is a machine-learning–powered application that lets you control your computer using hand gestures and movement.
-Trained on 12 distinct gesture classes, Handkey recognizes dynamic hand movements in real time and maps them to custom shortcuts, commands, actions and mouse movement — giving you a completely touch-free control experience.
+# 🖐️ HandFlow – Gesture-Controlled Computer Interaction
+#### HandFlow is a machine-learning–powered application that lets you control your computer using hand gestures and movement.
+Trained on 12 distinct gesture classes, HandFlow recognizes dynamic hand movements in real time and maps them to custom shortcuts, commands, actions and mouse movement — giving you a completely touch-free control experience.
 
 ## 🚀 Features
 
@@ -18,7 +18,7 @@ Trained on 12 distinct gesture classes, Handkey recognizes dynamic hand movement
 ## 📹 Continoues Real Application Demo Videos (NO CUT)
 The video is edited with the overlayed video from another camera perspective to showcase the product (but the whole video length is not cut or interrupted)
 
-[https://github.com/AndyHuynh24/HandKey/issues/1#issue-3579983604](https://github.com/user-attachments/assets/874403e4-094d-43fe-b69d-a0671dce15b1)
+[https://github.com/AndyHuynh24/HandFlow/issues/1#issue-3579983604](https://github.com/user-attachments/assets/874403e4-094d-43fe-b69d-a0671dce15b1)
 
 
 <div align="center">
@@ -44,7 +44,7 @@ The video is edited with the overlayed video from another camera perspective to 
 
 ## 🖥️ Real-Life Application Demo with Action Mapping
 
-This section showcases how **Handkey** maps detected gestures to real computer actions —  
+This section showcases how **HandFlow** maps detected gestures to real computer actions —  
 including keyboard shortcuts, typing, mouse control, and file operations.
 
 | ![](Demo/customshortcut.gif) | ![](Demo/openfile.gif) | ![](Demo/actionseries.gif) |
@@ -68,4 +68,34 @@ including keyboard shortcuts, typing, mouse control, and file operations.
 ![PyAutoGUI](https://img.shields.io/badge/PyAutoGUI-FFD43B?style=for-the-badge&logo=python&logoColor=black)
 ![Tkinter](https://img.shields.io/badge/Tkinter-FFDD00?style=for-the-badge&logo=python&logoColor=black)
 
+## ⚡ Quick Start
 
+```bash
+# Clone and setup
+git clone https://github.com/AndyHuynh24/HandFlow.git
+cd HandFlow
+
+# Create environment
+conda create -n handflow python=3.10 -y
+conda activate handflow
+
+# Install
+pip install -e ".[dev]"
+
+# Run
+handflow run
+```
+
+## 📖 Documentation
+
+For complete documentation including:
+- **Training your own model**
+- **Experiment tracking with W&B**
+- **Configuration options**
+- **Testing**
+
+See the **[Complete Guide](docs/GUIDE.md)**
+
+## 📄 License
+
+MIT License

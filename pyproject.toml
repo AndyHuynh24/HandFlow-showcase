@@ -1,0 +1,196 @@
+[build-system]
+requires = ["setuptools>=61.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "handflow"
+version = "1.0.0"
+description = "Gesture-controlled computer interaction using deep learning"
+readme = "README.md"
+license = {text = "MIT"}
+requires-python = ">=3.9"
+authors = [
+    {name = "HandFlow Team"}
+]
+keywords = ["gesture recognition", "computer vision", "deep learning", "mediapipe", "hand tracking"]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Intended Audience :: Developers",
+    "Intended Audience :: End Users/Desktop",
+    "License :: OSI Approved :: MIT License",
+    "Operating System :: OS Independent",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.9",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Topic :: Scientific/Engineering :: Artificial Intelligence",
+    "Topic :: Scientific/Engineering :: Image Recognition",
+]
+
+dependencies = [
+    # Core ML (pinned for compatibility)
+    "tensorflow==2.16.1",
+    "tensorflow-model-optimization>=0.8.0",
+    
+    # Computer Vision
+    "opencv-python>=4.8.0",
+    "mediapipe>=0.10.0",
+    
+    # Data Processing
+    "numpy>=1.24.0,<2.0.0",  # TF 2.16 needs numpy <2
+    "pandas>=2.0.0",
+    "scipy>=1.13.0",  # 1.13+ has ARM64 wheels for Python 3.12
+    "scikit-learn>=1.3.0",
+    
+    # System Control
+    "pyautogui>=0.9.54",
+    "keyboard>=0.13.5",
+    
+    # GUI
+    "PyQt6>=6.6.0",
+    
+    # Configuration & Utils
+    "pyyaml>=6.0",
+    "python-dotenv>=1.0.0",
+    "click>=8.1.0",
+    
+    # Experiment Tracking
+    "wandb>=0.16.0",
+    
+    # Data Visualization
+    "matplotlib>=3.8.0",
+    "seaborn>=0.13.0",
+]
+
+[project.optional-dependencies]
+dev = [
+    # Testing
+    "pytest>=7.4.0",
+    "pytest-cov>=4.1.0",
+    "pytest-qt>=4.2.0",
+    "pytest-mock>=3.12.0",
+    
+    # Code Quality
+    "ruff>=0.1.0",
+    "mypy>=1.7.0",
+    "pre-commit>=3.6.0",
+    
+    # Documentation
+    "mkdocs>=1.5.0",
+    "mkdocs-material>=9.5.0",
+    
+    # Notebooks
+    "jupyter>=1.0.0",
+    "ipykernel>=6.27.0",
+    "matplotlib>=3.8.0",
+    "seaborn>=0.13.0",
+    "plotly>=5.18.0",
+]
+
+macos = [
+    "pyobjc-framework-Quartz>=10.0",
+]
+
+[project.scripts]
+handflow = "handflow.cli:main"
+
+[project.urls]
+Homepage = "https://github.com/AndyHuynh24/HandFlow"
+Documentation = "https://github.com/AndyHuynh24/HandFlow#readme"
+Repository = "https://github.com/AndyHuynh24/HandFlow.git"
+Issues = "https://github.com/AndyHuynh24/HandFlow/issues"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.setuptools.package-data]
+handflow = ["py.typed"]
+
+# ============ Ruff Configuration ============
+[tool.ruff]
+line-length = 100
+target-version = "py39"
+src = ["src", "tests"]
+
+[tool.ruff.lint]
+select = [
+    "E",     # pycodestyle errors
+    "W",     # pycodestyle warnings
+    "F",     # Pyflakes
+    "I",     # isort
+    "B",     # flake8-bugbear
+    "C4",    # flake8-comprehensions
+    "UP",    # pyupgrade
+    "ARG",   # flake8-unused-arguments
+    "SIM",   # flake8-simplify
+]
+ignore = [
+    "E501",  # line too long (handled by formatter)
+    "B008",  # do not perform function calls in argument defaults
+]
+
+[tool.ruff.lint.per-file-ignores]
+"tests/*" = ["ARG001"]  # Unused function args in tests (fixtures)
+"notebooks/*" = ["E402"]  # Module imports not at top
+
+[tool.ruff.lint.isort]
+known-first-party = ["handflow"]
+
+# ============ Mypy Configuration ============
+[tool.mypy]
+python_version = "3.10"
+warn_return_any = true
+warn_unused_configs = true
+disallow_untyped_defs = true
+disallow_incomplete_defs = true
+check_untyped_defs = true
+ignore_missing_imports = true
+show_error_codes = true
+
+[[tool.mypy.overrides]]
+module = [
+    "cv2.*",
+    "mediapipe.*",
+    "pyautogui.*",
+    "tensorflow.*",
+    "wandb.*",
+]
+ignore_missing_imports = true
+
+# ============ Pytest Configuration ============
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+python_files = ["test_*.py", "*_test.py"]
+python_classes = ["Test*"]
+python_functions = ["test_*"]
+addopts = [
+    "-v",
+    "--cov=src/handflow",
+    "--cov-report=term-missing",
+    "--cov-report=html:coverage_html",
+    "--cov-fail-under=70",
+]
+filterwarnings = [
+    "ignore::DeprecationWarning",
+    "ignore::PendingDeprecationWarning",
+]
+
+# ============ Coverage Configuration ============
+[tool.coverage.run]
+source = ["src/handflow"]
+branch = true
+omit = [
+    "*/tests/*",
+    "*/__init__.py",
+]
+
+[tool.coverage.report]
+exclude_lines = [
+    "pragma: no cover",
+    "def __repr__",
+    "raise AssertionError",
+    "raise NotImplementedError",
+    "if __name__ == .__main__.:",
+    "if TYPE_CHECKING:",
+]
