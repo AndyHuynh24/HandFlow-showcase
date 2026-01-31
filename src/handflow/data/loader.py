@@ -24,7 +24,7 @@ from handflow.utils import get_logger
 def load_raw_data(
     data_path: str | Path,
     actions: list[str],
-    sequence_length: int = 16,
+    sequence_length: int = 12,
     return_paths: bool = False,
 ) -> tuple[np.ndarray, np.ndarray] | tuple[np.ndarray, np.ndarray, np.ndarray]:
     """
