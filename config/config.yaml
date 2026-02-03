@@ -15,6 +15,7 @@ data:
   left_raw_path: "data/raw/left_mp_data"
   keypoint_dim: 84  # 21 landmarks * 3 values (x, y, z)
   sequence_length: 12  # Number of frames per sequence
+  target_fps: 20  # Target FPS for data collection and inference (must match!)
 
   validator: 
     check_sequence_length: true
@@ -34,9 +35,9 @@ model:
     - none
     - horizontal_swipe
     - swipeup
-    - swipedown
     - thumb_left
     - thumb_right
+    - 5_fingers_close
     - pointyclick
     - middleclick
     - touch_hover
@@ -80,7 +81,8 @@ augmentation:
   noise_prob: 0.4 
   noise_std: 0.003
 
-  #Time warping
+  #Time warping (disabled by default - can distort gesture timing characteristics)
+  time_warp_enabled: false
   time_warp_prob: 0.2
   time_warp_factor: 0.1
 

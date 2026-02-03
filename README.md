@@ -1,101 +1,246 @@
-# 🖐️ HandFlow – Gesture-Controlled Computer Interaction
-#### HandFlow is a machine-learning–powered application that lets you control your computer using hand gestures and movement.
-Trained on 12 distinct gesture classes, HandFlow recognizes dynamic hand movements in real time and maps them to custom shortcuts, commands, actions and mouse movement — giving you a completely touch-free control experience.
+# HandFlow
 
-## 🚀 Features
+**Real-Time Hand Gesture Recognition for Touchless Human-Computer Interaction**
 
-- 🎯 **12 Well-Trained Gestures** – Each gesture is recognized with high confidence and minimal latency.  
-- 💡 **Custom Action Mapping** – Bind any gesture to actions like:
-  - Keyboard shortcuts  
-  - Mouse control  
-  - Opening files or folders  
-  - Typing preset text  
-- ⚙️ **Real-Time Detection** – Runs smoothly on standard hardware using OpenCV and TensorFlow.  
-- 🧠 **Optimized ML Model** – LSTM/GRU-based sequence classifier trained on thousands of gesture samples with rotation and lighting augmentation.  
-- 💻 **Cross-Platform Ready** – Works on macOS, Windows, and Linux.  
-- 🧩 **Modular Design** – Easy to integrate with other automation tools.
+> **Note:** This is an early-stage prototype demonstrating core capabilities. The project is under active development with significant features and optimizations planned. Current implementation serves as a proof-of-concept for the underlying technology.
 
-## 📹 Continoues Real Application Demo Videos (NO CUT)
-The video is edited with the overlayed video from another camera perspective to showcase the product (but the whole video length is not cut or interrupted)
+[Demo Video](#demo) | [Features](#features) | [Architecture](#architecture) | [Getting Started](#getting-started)
 
-[https://github.com/AndyHuynh24/HandFlow/issues/1#issue-3579983604](https://github.com/user-attachments/assets/874403e4-094d-43fe-b69d-a0671dce15b1)
+---
 
+## Overview
 
-<div align="center">
-## 🎯 Gesture Showcase
+HandFlow is an end-to-end gesture recognition system that enables touchless interaction with computers through free-space hand gestures. The system combines deep learning-based gesture classification with computer vision-based spatial calibration to support:
 
-| ![](Demo/Left_swipeleft.gif) | ![](Demo/Left_pointyclick.gif) | ![](Demo/Left_middleclick.gif) |
-|:--:|:--:|:--:|
-| Left_swipe | Left_pointyclick | Left_middleclick |
+- **Free-space gesture control** — Navigate, click, scroll, and trigger shortcuts without touching any device
+- **Virtual touchscreen** — Transform any non-touch display into a touch-enabled surface using ArUco marker calibration
+- **Paper macro pads** — Use printed ArUco markers as physical button interfaces mapped to OS-level controls
 
-| ![](Demo/Left_ringclick.gif) | ![](Demo/Left_pinkyclick.gif) | ![](Demo/Left_zoom.gif) |
-|:--:|:--:|:--:|
-| Left_ringclick | Left_pinkyclick | Left_zoom |
+## Demo
 
-| ![](Demo/Right_swiperight.gif) | ![](Demo/Right_pointyclick.gif) | ![](Demo/Right_middleclick.gif) |
-|:--:|:--:|:--:|
-| Right_swipe | Right_pointyclick | Right_middleclick |
+<!-- Replace with your actual demo video link -->
+[![Demo Video](https://img.shields.io/badge/Demo-Watch%20Video-red?style=for-the-badge&logo=youtube)](YOUR_DEMO_LINK_HERE)
 
-| ![](Demo/Right_ringclick.gif) | ![](Demo/Right_pinkyclick.gif) | ![](Demo/Right_zoom.gif) |
-|:--:|:--:|:--:|
-| Right_ringclick | Right_pinkyclick | Right_zoom |
+*Click above to watch the prototype demonstration*
 
-</div>
+---
 
-## 🖥️ Real-Life Application Demo with Action Mapping
+## Features
 
-This section showcases how **HandFlow** maps detected gestures to real computer actions —  
-including keyboard shortcuts, typing, mouse control, and file operations.
+### Gesture Recognition
+- **11 gesture classes** including swipes, clicks, touch, and navigation gestures
+- **Per-hand detection** — Independent left/right hand tracking with gesture-specific actions
+- **Customizable mappings** — Map any gesture to keyboard shortcuts, mouse actions, or application launches
 
-| ![](Demo/customshortcut.gif) | ![](Demo/openfile.gif) | ![](Demo/actionseries.gif) |
-|:--:|:--:|:--:|
-| **Perform One Shortcut** <br> (Ctrl + right arrow) | **Open App** <br> (*Open App → Type  → Enter*) | **Perform Series of Shortcuts** <br> (*Open App → Type  → Enter*) |
+### Spatial Calibration
+- **ArUco-based homography** — 4-corner marker system for precise screen coordinate mapping
+- **Missing marker recovery** — Estimates occluded corners using remaining visible markers
+- **Sub-pixel accuracy** — Per-corner offset calibration for precise touch mapping
 
-| ![](Demo/mousecontrol.gif) | ![](Demo/scroll.gif) | |
-|:--:|:--:|:--:|
-| **Mouse Control** <br> (move, click) | **Scroll up/down** <br> (Hold the gestuer for scrolling up and down) |  |
+### Real-Time Performance
+- **~25 FPS** on standard consumer hardware (CPU-only inference)
+- **TFLite quantization** for optimized model size (~0.6 MB) and inference speed
+- **Smoothing filters** (OneEuro) for stable cursor tracking and reduced jitter
 
-## 🧰 Tech Stack
+---
 
-![Python](https://img.shields.io/badge/Python-3776AB?style=for-the-badge&logo=python&logoColor=white)
-![OpenCV](https://img.shields.io/badge/OpenCV-5C3EE8?style=for-the-badge&logo=opencv&logoColor=white)
-![TensorFlow](https://img.shields.io/badge/TensorFlow-FF6F00?style=for-the-badge&logo=tensorflow&logoColor=white)
-![Keras](https://img.shields.io/badge/Keras-D00000?style=for-the-badge&logo=keras&logoColor=white)
-![MediaPipe](https://img.shields.io/badge/MediaPipe-4285F4?style=for-the-badge&logo=google&logoColor=white)
-![NumPy](https://img.shields.io/badge/NumPy-013243?style=for-the-badge&logo=numpy&logoColor=white)
-![Pandas](https://img.shields.io/badge/Pandas-150458?style=for-the-badge&logo=pandas&logoColor=white)
-![Matplotlib](https://img.shields.io/badge/Matplotlib-11557C?style=for-the-badge&logo=plotly&logoColor=white)
-![PyAutoGUI](https://img.shields.io/badge/PyAutoGUI-FFD43B?style=for-the-badge&logo=python&logoColor=black)
-![Tkinter](https://img.shields.io/badge/Tkinter-FFDD00?style=for-the-badge&logo=python&logoColor=black)
+## Architecture
 
-## ⚡ Quick Start
+### System Pipeline
 
-```bash
-# Clone and setup
-git clone https://github.com/AndyHuynh24/HandFlow.git
-cd HandFlow
-
-# Create environment
-conda create -n handflow python=3.10 -y
-conda activate handflow
-
-# Install
-pip install -e ".[dev]"
-
-# Run
-handflow run
+```
+┌─────────────┐    ┌──────────────┐    ┌─────────────┐    ┌──────────────┐
+│   Camera    │───▶│  MediaPipe   │───▶│   Feature   │───▶│   Temporal   │
+│   Input     │    │  Hand Track  │    │  Engineer   │    │     CNN      │
+└─────────────┘    └──────────────┘    └─────────────┘    └──────────────┘
+                                              │                   │
+                                              ▼                   ▼
+┌─────────────┐    ┌──────────────┐    ┌─────────────┐    ┌──────────────┐
+│   OS-Level  │◀───│    Action    │◀───│  Smoothing  │◀───│   Gesture    │
+│   Control   │    │   Executor   │    │  & Voting   │    │ Prediction   │
+└─────────────┘    └──────────────┘    └─────────────┘    └──────────────┘
 ```
 
-## 📖 Documentation
+### Model Architecture
 
-For complete documentation including:
-- **Training your own model**
-- **Experiment tracking with W&B**
-- **Configuration options**
-- **Testing**
+**Temporal Convolutional Network (TCN)** with velocity-gated attention:
 
-See the **[Complete Guide](docs/GUIDE.md)**
+- **Input:** 12-frame sequences × 88 engineered features
+- **Velocity Gating:** Custom `SoftMotionWeighting` layer that dynamically weights features based on motion magnitude, suppressing noise during idle periods
+- **Temporal Processing:** Dilated causal convolutions (dilation rates: 1, 2, 4) with residual connections
+- **Aggregation:** Combined average + max pooling for temporal summarization
+- **Output:** 11-class softmax classification
 
-## 📄 License
+**Alternative architectures available:** LSTM, GRU, 1D-CNN, Transformer
 
-MIT License
+### Feature Engineering (88 features)
+
+| Feature Type | Dimensions | Description |
+|-------------|------------|-------------|
+| Relative Positions | 63 | Wrist-normalized (x, y, z) for 21 landmarks |
+| Inter-finger Distances | 5 | Thumb to each fingertip + index PIP |
+| Raw Positions | 9 | Absolute coords for thumb tip, index MCP/tip |
+| Velocity Features | 6 | Frame-to-frame motion of index finger |
+| Finger Angles | 5 | Bending angle at PIP joint per finger |
+
+### Data Augmentation
+
+Online geometric augmentation during training:
+- Gaussian noise injection
+- Time warping
+- Landmark dropout
+- Uniform scaling & 2D rotation
+- Z-axis transformations (scale, shift, proportional stretch)
+
+---
+
+## Tech Stack
+
+| Component | Technology |
+|-----------|------------|
+| ML Framework | TensorFlow/Keras + TFLite |
+| Hand Tracking | MediaPipe Hands |
+| Computer Vision | OpenCV + ArUco |
+| Experiment Tracking | Weights & Biases |
+| GUI | Tkinter |
+| Testing | pytest |
+
+---
+
+## Project Structure
+
+```
+HandFlow/
+├── config/                 # YAML configuration files
+│   ├── config.yaml        # Model & training settings
+│   └── handflow_setting.yaml  # User preferences & gesture mappings
+├── src/handflow/          # Main package
+│   ├── app/               # GUI application
+│   ├── data/              # Data loading & augmentation
+│   ├── features/          # Feature engineering
+│   ├── models/            # Neural network architectures
+│   ├── detector/          # Gesture & ArUco detection
+│   └── actions/           # Mouse/keyboard control
+├── scripts/               # Training & preprocessing scripts
+├── models/                # Trained model artifacts
+├── Experiment_notebooks/  # Jupyter notebooks for exploration
+└── tests/                 # Unit tests
+```
+
+---
+
+## Getting Started
+
+### Prerequisites
+
+- Python 3.9+
+- Webcam
+- (Optional) Printed ArUco markers for spatial calibration
+
+### Installation
+
+```bash
+# Clone the repository
+git clone https://github.com/yourusername/HandFlow.git
+cd HandFlow
+
+# Create virtual environment
+python -m venv venv
+source venv/bin/activate  # On Windows: venv\Scripts\activate
+
+# Install dependencies
+pip install -e .
+```
+
+### Quick Start
+
+```bash
+# Run the application
+python -m handflow
+
+# Or run with GUI
+python -m handflow --gui
+```
+
+### Training Custom Models
+
+```bash
+# Train with default configuration
+python scripts/train.py
+
+# Train with custom config
+python scripts/train.py --config config/config.yaml
+```
+
+### Benchmarking Model Inference
+
+Compare inference times across different architectures:
+
+```bash
+# Basic benchmark (all architectures)
+python scripts/benchmark_inference.py
+
+# More iterations for accurate results
+python scripts/benchmark_inference.py --iterations 500 --warmup 50
+
+# Include TFLite comparison
+python scripts/benchmark_inference.py --include-tflite
+
+# Benchmark specific architectures only
+python scripts/benchmark_inference.py --architectures lstm tcn transformer
+
+# Different batch size
+python scripts/benchmark_inference.py --batch-size 8
+```
+
+Output includes mean/std/min/p95 inference times (ms) and parameter counts for each model.
+
+---
+
+## Supported Gestures
+
+| Gesture | Default Action | Description |
+|---------|---------------|-------------|
+| `none` | — | Baseline (no gesture) |
+| `horizontal_swipe` | Navigate | Left/right swipe motion |
+| `swipeup` / `swipedown` | Scroll | Vertical swipe gestures |
+| `thumb_left` / `thumb_right` | Back/Forward | Directional thumb gestures |
+| `pointyclick` | Left Click | Index finger point + click |
+| `middleclick` | Middle Click | Middle finger click |
+| `touch` | Click | Tap gesture on virtual surface |
+| `touch_hover` | Cursor Move | Move cursor without clicking |
+| `touch_hold` | Drag | Hold for drag operations |
+
+---
+
+## Roadmap
+
+This prototype demonstrates the foundational capabilities. Planned enhancements include:
+
+- [ ] Multi-hand gesture combinations
+- [ ] Expanded gesture vocabulary (20+ gestures)
+- [ ] 3D spatial gestures with depth sensing
+- [ ] Mobile deployment (Android/iOS)
+- [ ] Plugin system for application-specific controls
+- [ ] Improved low-light and varying background robustness
+- [ ] Extended macro pad support (24+ button layouts)
+
+---
+
+## Acknowledgments
+
+- [MediaPipe](https://mediapipe.dev/) for hand landmark detection
+- [OpenCV](https://opencv.org/) for computer vision utilities
+- [Weights & Biases](https://wandb.ai/) for experiment tracking
+
+---
+
+## License
+
+This project is for educational and demonstration purposes.
+
+---
+
+<p align="center">
+  <i>Built with passion for touchless interaction</i>
+</p>

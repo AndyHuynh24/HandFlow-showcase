@@ -105,10 +105,17 @@ class GestureDetector:
         # Gesture history for display
         self.gesture_display_history = deque(maxlen=5)
 
-        # FPS
+        # Track last detected gesture for continuous cursor movement
+        # touch_hover and touch_hold need cursor updates EVERY frame, not just when model runs
+        self._last_right_gesture = "none"
+        self._last_left_gesture = "none"
+
+        # FPS tracking - measures actual data collection rate (keypoints fed to model)
         self._fps_start_time = time.time()
         self._fps_counter = 0
         self.current_fps = 0.0
+        self._data_fps_counter = 0  # Count keypoint additions to sequence
+        self._data_fps = 0.0  # Actual data collection FPS
 
         # ArUco screen detector for touch-to-cursor mapping
         self.aruco_detector = aruco_detector
@@ -141,6 +148,9 @@ class GestureDetector:
         # Drag state tracking for touch_hold gesture
         self._is_dragging = False
         self._last_drag_pos: Optional[Tuple[int, int]] = None
+        # Drag persistence - don't end drag on brief gesture fluctuations
+        self._drag_end_grace_frames = 0
+        self._drag_grace_max = 2  # Keep drag active for N frames after gesture changes
 
         # Macropad interaction flag - when True, skip cursor movements
         # This is set by detection_window when finger is over macropad
@@ -153,6 +163,28 @@ class GestureDetector:
         self.TOUCH_CACHE_LOOKBACK = 6      # Use position from 4 frames ago
         self._right_tip_cache: deque = deque(maxlen=self.TOUCH_CACHE_SIZE)
         self._left_tip_cache: deque = deque(maxlen=self.TOUCH_CACHE_SIZE)
+
+        # Cached MediaPipe results for frame skipping optimization
+        self._cached_mp_results = None
+        self._cached_right_kp = None
+        self._cached_left_kp = None
+
+        # Delta time tracking for FPS-invariant features
+        # Read target FPS from config for consistency
+        target_fps = getattr(self.config.data, 'target_fps', 20.0)
+        self._last_delta_time = 1.0 / target_fps
+        self._target_fps = target_fps  # Reference FPS for velocity normalization
+
+        # Data collection rate limiting (collect keypoints at exactly target FPS)
+        self._data_collection_interval = 1.0 / target_fps  # 50ms for 20 FPS
+        self._last_data_collection_time = time.time()  # Initialize to now
+        self._data_rate_limit_enabled = True  # Can be toggled
+
+        # Frame interpolation for slow devices
+        # Store last known keypoints for interpolation when frames are missed
+        self._last_right_kp: Optional[np.ndarray] = None
+        self._last_left_kp: Optional[np.ndarray] = None
+        self._interpolation_enabled = True  # Fill missing frames with interpolation
 
     def _load_model(self):
         """Load TFLite models."""
@@ -192,6 +224,22 @@ class GestureDetector:
         to let the macropad handle the interaction instead.
         """
         self._macropad_active = active
+
+    def set_data_rate_limit(self, enabled: bool) -> None:
+        """
+        Enable/disable data collection rate limiting.
+        When enabled, keypoints are collected at exactly target FPS (e.g., 20 FPS).
+        When disabled, keypoints are collected every frame (for testing).
+        """
+        self._data_rate_limit_enabled = enabled
+
+    def set_interpolation(self, enabled: bool) -> None:
+        """
+        Enable/disable frame interpolation for slow devices.
+        When enabled, missing frames are filled with linear interpolation.
+        This maintains temporal consistency when device runs below target FPS.
+        """
+        self._interpolation_enabled = enabled
 
     def _get_cached_tip(self, hand: str) -> Optional[Tuple[float, float]]:
         """
@@ -389,20 +437,66 @@ class GestureDetector:
         
         return True
 
-    def _end_drag(self):
-        """Release mouse button if currently dragging."""
+    def _update_continuous_cursor(self):
+        """
+        Update cursor position EVERY frame for touch_hover and touch_hold gestures.
+        This is called every frame (not just when gesture model runs) for smooth movement.
+        """
+        # Update drag grace period countdown
+        self._update_drag_grace()
+
+        # Only handle right hand for now
+        gesture = self._last_right_gesture
+
+        # Skip if no finger tip detected
+        if self._right_index_tip is None:
+            return
+
+        if gesture == "touch_hover":
+            self._move_on_hover("Right")
+        elif gesture == "touch_hold":
+            # Cancel any pending drag end - gesture is still touch_hold
+            self._cancel_end_drag()
+            self._drag_on_hold("Right")
+
+    def _request_end_drag(self):
+        """
+        Request to end drag with grace period.
+        The drag won't actually end until grace frames expire.
+        This prevents brief gesture fluctuations from interrupting drags.
+        """
+        if self._is_dragging and self._drag_end_grace_frames == 0:
+            self._drag_end_grace_frames = self._drag_grace_max
+
+    def _cancel_end_drag(self):
+        """Cancel any pending drag end request (gesture came back to touch_hold)."""
+        self._drag_end_grace_frames = 0
+
+    def _update_drag_grace(self):
+        """Update drag grace period countdown. Called every frame."""
+        if self._drag_end_grace_frames > 0:
+            self._drag_end_grace_frames -= 1
+            if self._drag_end_grace_frames == 0:
+                # Grace period expired, actually end the drag
+                self._force_end_drag()
+
+    def _force_end_drag(self):
+        """Immediately end drag (called when grace period expires)."""
         if self._is_dragging:
             if self._last_drag_pos:
                 x, y = self._last_drag_pos
                 self.logger.info(f"[Touch_hold] Ending drag at ({x}, {y})")
                 ActionExecutor.mouse_up(x, y)
             else:
-                # Fallback - release at current cursor position
                 import pyautogui
                 pos = pyautogui.position()
                 ActionExecutor.mouse_up(pos[0], pos[1])
             self._is_dragging = False
             self._last_drag_pos = None
+
+    def _end_drag(self):
+        """Request to end drag with grace period to handle gesture fluctuations."""
+        self._request_end_drag()
 
 
     def _extract_raw_keypoints(self, results, flip_h: bool, swap_hands: bool):
@@ -413,37 +507,61 @@ class GestureDetector:
         """
         return self.hand_tracker.update(results, flip_h, swap_hands)
 
-    def process_frame(self, frame: np.ndarray) -> Tuple[np.ndarray, dict]:
+    def process_frame(
+        self,
+        frame: np.ndarray,
+        frame_small: np.ndarray = None,
+        run_gesture_model: bool = True,
+        delta_time: float = None,
+        disable_drawing: bool = False
+    ) -> Tuple[np.ndarray, dict]:
         """
         Process a single video frame.
+
+        Args:
+            frame: BGR image from camera (full resolution for display)
+            frame_small: Optional smaller BGR image for MediaPipe (faster processing)
+            run_gesture_model: If False, skip TCN gesture inference (optimization)
+            delta_time: Time since last frame in seconds (for FPS-invariant features)
+            disable_drawing: If True, skip all drawing operations (for performance testing)
         """
-        # Store frame size for coordinate conversion
+        # Store frame size for coordinate conversion (use full frame size)
         self._frame_size = (frame.shape[1], frame.shape[0])  # (width, height)
+
+        # Update delta time for velocity normalization
+        if delta_time is not None and delta_time > 0:
+            self._last_delta_time = delta_time
 
         # Reset finger positions (will be updated if hands detected)
         self._right_index_tip = None
         self._left_index_tip = None
 
-        # FPS
+        # FPS calculation
         self._fps_counter += 1
         elapsed = time.time() - self._fps_start_time
         if elapsed > 1.0:
-            self.current_fps = self._fps_counter / elapsed
+            self.current_fps = self._fps_counter / elapsed  # Loop FPS
+            self._data_fps = self._data_fps_counter / elapsed  # Data collection FPS
             self._fps_counter = 0
+            self._data_fps_counter = 0
             self._fps_start_time = time.time()
 
         # Get setting
         flip_h = self.setting.camera.flip_horizontal
         swap_hands = self.setting.camera.swap_hands
 
-        # Convert BGR to RGB for MediaPipe
-        image_rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+        # Run MediaPipe detection EVERY frame (for smooth landmarks & data collection)
+        # Use small frame for MediaPipe if provided (faster)
+        mp_frame = frame_small if frame_small is not None else frame
+        # Convert BGR to RGB for MediaPipe (in-place when possible)
+        # cv2.cvtColor with dst parameter avoids allocation
+        image_rgb = cv2.cvtColor(mp_frame, cv2.COLOR_BGR2RGB)
         image_rgb.flags.writeable = False
         results = self.hands.process(image_rgb)
-        image_rgb.flags.writeable = True
+        # Note: don't need to set writeable back since we don't modify image_rgb
 
-        # Convert back for drawing
-        image = cv2.cvtColor(image_rgb, cv2.COLOR_RGB2BGR)
+        # Use original frame for drawing (no unnecessary conversion)
+        image = frame
 
         detections = {}
 
@@ -452,7 +570,7 @@ class GestureDetector:
         right_kp, left_kp = self._extract_raw_keypoints(results, flip_h, swap_hands)
 
         # Draw landmarks and labels using tracker's stable assignments
-        if results.multi_hand_landmarks:
+        if results.multi_hand_landmarks and not disable_drawing:
             # Get stable hand labels from tracker
             hand_labels = self.hand_tracker.get_hand_labels(swap_hands)
 
@@ -461,14 +579,14 @@ class GestureDetector:
                 self.mp_drawing.draw_landmarks(
                     image, hand_landmarks, self.mp_hands.HAND_CONNECTIONS)
 
-            # Draw stable labels at wrist positions
+            # Draw stable labels at wrist positions (scaled for small frame)
             # The tracker knows which hand is which by centroid matching
             for _, (label, centroid) in hand_labels.items():
                 h, w, _ = image.shape
                 wx, wy = int(centroid[0] * w), int(centroid[1] * h)
                 color = (255, 100, 100) if label == "Right" else (100, 100, 255)
-                cv2.putText(image, label, (wx - 30, wy + 30),
-                           cv2.FONT_HERSHEY_SIMPLEX, 0.7, color, 2)
+                cv2.putText(image, label[0], (wx - 8, wy + 15),  # Just first letter "R" or "L"
+                           cv2.FONT_HERSHEY_SIMPLEX, 0.4, color, 1)
 
         # Store finger tip positions using tracker's stable assignments
         right_tip, left_tip = self.hand_tracker.get_finger_tips(swap_hands)
@@ -488,22 +606,79 @@ class GestureDetector:
             # Add to cache for stable touch detection
             self._left_tip_cache.append((smoothed_x, smoothed_y))
 
-        # Update sequences
-        if right_kp is not None and np.any(right_kp):
-            self.right_sequence.append(right_kp)
-            self.right_sequence = self.right_sequence[-self.sequence_length:]
-            self.right_lock = True
+        # Update cursor EVERY frame for smooth touch_hover/touch_hold movement
+        # This runs regardless of whether gesture model runs this frame
+        self._update_continuous_cursor()
 
-        if left_kp is not None and np.any(left_kp):
-            self.left_sequence.append(left_kp)
-            self.left_sequence = self.left_sequence[-self.sequence_length:]
-            self.left_lock = True
+        # Update sequences with rate limiting (collect at exactly target FPS)
+        # With frame interpolation for slow devices
+        current_time = time.time()
+        time_since_last = current_time - self._last_data_collection_time
 
-        # Right hand prediction
-        if self.right_lock and len(self.right_sequence) == self.sequence_length:
+        # Determine if we should collect this frame
+        if self._data_rate_limit_enabled:
+            should_collect = time_since_last >= self._data_collection_interval
+            if should_collect:
+                # Calculate how many frames we missed (for interpolation)
+                missed_frames = int(time_since_last / self._data_collection_interval) - 1
+                missed_frames = min(missed_frames, self.sequence_length - 1)  # Cap to avoid overflow
+
+                # Update time to maintain exact interval
+                self._last_data_collection_time += self._data_collection_interval * (missed_frames + 1)
+                # Prevent drift if we fell too far behind
+                if current_time - self._last_data_collection_time > self._data_collection_interval:
+                    self._last_data_collection_time = current_time
+        else:
+            should_collect = True
+            missed_frames = 0
+
+        if should_collect:
+            collected = False
+
+            # Right hand collection with interpolation
+            if right_kp is not None and np.any(right_kp):
+                # Interpolate missing frames if we have previous keypoints
+                if self._interpolation_enabled and missed_frames > 0 and self._last_right_kp is not None:
+                    for i in range(1, missed_frames + 1):
+                        # Linear interpolation: lerp from last to current
+                        t = i / (missed_frames + 1)
+                        interp_kp = self._last_right_kp * (1 - t) + right_kp * t
+                        self.right_sequence.append(interp_kp)
+                    self.right_sequence = self.right_sequence[-self.sequence_length:]
+
+                # Add current frame
+                self.right_sequence.append(right_kp)
+                self.right_sequence = self.right_sequence[-self.sequence_length:]
+                self._last_right_kp = right_kp.copy()  # Store for next interpolation
+                self.right_lock = True
+                collected = True
+
+            # Left hand collection with interpolation
+            if left_kp is not None and np.any(left_kp):
+                # Interpolate missing frames if we have previous keypoints
+                if self._interpolation_enabled and missed_frames > 0 and self._last_left_kp is not None:
+                    for i in range(1, missed_frames + 1):
+                        t = i / (missed_frames + 1)
+                        interp_kp = self._last_left_kp * (1 - t) + left_kp * t
+                        self.left_sequence.append(interp_kp)
+                    self.left_sequence = self.left_sequence[-self.sequence_length:]
+
+                # Add current frame
+                self.left_sequence.append(left_kp)
+                self.left_sequence = self.left_sequence[-self.sequence_length:]
+                self._last_left_kp = left_kp.copy()  # Store for next interpolation
+                self.left_lock = True
+                collected = True
+
+            if collected:
+                self._data_fps_counter += 1 + missed_frames  # Count all frames (real + interpolated)
+
+        # Right hand prediction - only run TCN model every N frames
+        if run_gesture_model and self.right_lock and len(self.right_sequence) == self.sequence_length:
             if self.interpreter:
                 seq_array = np.array(self.right_sequence)  # (seq_len, 84)
-                features = self.feature_engineer.transform(seq_array)  # (seq_len, 67)
+                # Pass delta_time for FPS-invariant velocity features
+                features = self.feature_engineer.transform(seq_array, delta_time=self._last_delta_time)
 
                 gesture, confidence, self.res_right = self._predict('Right', features)
                 detections['Right'] = {'gesture': gesture, 'confidence': confidence}
@@ -511,27 +686,29 @@ class GestureDetector:
                 # Handle gesture
                 self._handle_gesture('Right', gesture, confidence)
 
-        # Left hand prediction
-        if self.left_lock and len(self.left_sequence) == self.sequence_length:
+        # Left hand prediction - only run TCN model every N frames
+        if run_gesture_model and self.left_lock and len(self.left_sequence) == self.sequence_length:
             if self.interpreter:
                 seq_array = np.array(self.left_sequence)
-                features = self.feature_engineer.transform(seq_array)
+                # Pass delta_time for FPS-invariant velocity features
+                features = self.feature_engineer.transform(seq_array, delta_time=self._last_delta_time)
 
                 gesture, confidence, self.res_left = self._predict('Left', features)
                 detections['Left'] = {'gesture': gesture, 'confidence': confidence}
 
                 self._handle_gesture('Left', gesture, confidence)
 
-        # Draw probability bars (before resetting locks)
-        image = self._draw_prob_bars(image, self.right_lock, self.left_lock)
+        # Draw probability bars (before resetting locks) - skip if drawing disabled
+        if not disable_drawing:
+            image = self._draw_prob_bars(image, self.right_lock, self.left_lock)
 
-        # Draw gesture history
-        image = self._draw_history(image)
+            # Draw gesture history
+            image = self._draw_history(image)
 
-        # Draw FPS
+        # Draw FPS - always show (for performance testing)
         img_h, img_w, _ = image.shape
-        cv2.putText(image, f"FPS: {self.current_fps:.1f}", (10, img_h - 20),
-                   cv2.FONT_HERSHEY_SIMPLEX, 0.6, (255, 255, 0), 2)
+        cv2.putText(image, f"FPS: {self._data_fps:.1f} ({self.current_fps:.1f})", (5, img_h - 8),
+                   cv2.FONT_HERSHEY_SIMPLEX, 0.35, (255, 255, 0), 1)
 
         # Reset locks
         self.right_lock = False
@@ -582,13 +759,19 @@ class GestureDetector:
 
     def _handle_gesture(self, hand: str, gesture: str, confidence: float):
         """Execute action for detected gesture."""
-        # Always decrement cooldown first 
+        # Always decrement cooldown first
         if hand == 'Right':
             if self.right_cooldown > 0:
                 self.right_cooldown -= 1
         else:
             if self.left_cooldown > 0:
                 self.left_cooldown -= 1
+
+        # Track last gesture for continuous cursor movement (every frame)
+        if hand == 'Right':
+            self._last_right_gesture = gesture if confidence >= self.threshold else "none"
+        else:
+            self._last_left_gesture = gesture if confidence >= self.threshold else "none"
 
         # "none" gesture: end any drag and skip
         if gesture == "none":
@@ -605,17 +788,17 @@ class GestureDetector:
             self._end_drag()
             if hand == 'Right':
                 self.right_cooldown = 0
-            else: 
+            else:
                 self.left_cooldown = 0
-            self._move_on_hover(hand)
+            # Cursor movement now handled in _update_continuous_cursor (every frame)
             return
         elif gesture == "touch_hold":
             # Drag gesture - mouse down and move
             if hand == 'Right':
                 self.right_cooldown = 0
-            else: 
+            else:
                 self.left_cooldown = 0
-            self._drag_on_hold(hand)
+            # Cursor movement now handled in _update_continuous_cursor (every frame)
             return
         else:
             # Any other gesture ends the drag
@@ -658,74 +841,80 @@ class GestureDetector:
                     self.executor.execute_sequence(valid_actions)
 
     def _draw_prob_bars(self, image: np.ndarray, right_active: bool, left_active: bool) -> np.ndarray:
-        """Draw probability visualization bars"""
+        """Draw probability visualization bars (scaled for small frame)"""
         h, w, _ = image.shape
         colors = [(245, 117, 16), (117, 245, 16), (16, 117, 245), (245, 200, 16),
                   (200, 117, 245), (16, 245, 200), (245, 16, 117), (117, 16, 245)]
 
+        # Scaled for 640x360 frame
+        bar_spacing = 18
+        bar_height = 12
+        font_scale = 0.4
+        font_thickness = 1
+        margin = 5
+        start_y = 30
+
         # Right hand bars (right side of screen)
         if right_active:
             for num, prob in enumerate(self.res_right):
-                bar_length = int(prob * 100)
-                margin = 10
+                bar_length = int(prob * 60)  # Scaled down bar length
 
                 # Right-aligned rectangle
                 x2 = w - margin
                 x1 = x2 - bar_length
-                y1 = 60 + num * 40
-                y2 = 90 + num * 40
+                y1 = start_y + num * bar_spacing
+                y2 = y1 + bar_height
 
                 color = colors[num % len(colors)]
                 cv2.rectangle(image, (x1, y1), (x2, y2), color, -1)
 
                 # Right-aligned text
                 label = self.gesture_classes[num] if num < len(self.gesture_classes) else f"class_{num}"
-                text = f"{label}"
-                (text_w, text_h), _ = cv2.getTextSize(text, cv2.FONT_HERSHEY_SIMPLEX, 1, 2)
+                (text_w, _), _ = cv2.getTextSize(label, cv2.FONT_HERSHEY_SIMPLEX, font_scale, font_thickness)
                 text_x = w - text_w - margin
-                text_y = 85 + num * 40
+                text_y = y1 + bar_height - 2
 
-                cv2.putText(image, text, (text_x, text_y),
-                           cv2.FONT_HERSHEY_SIMPLEX, 1, (255, 255, 255), 2, cv2.LINE_AA)
+                cv2.putText(image, label, (text_x, text_y),
+                           cv2.FONT_HERSHEY_SIMPLEX, font_scale, (255, 255, 255), font_thickness, cv2.LINE_AA)
 
         # Left hand bars (left side of screen)
         if left_active:
             for num, prob in enumerate(self.res_left):
-                bar_length = int(prob * 100)
+                bar_length = int(prob * 60)
 
                 # Left-aligned rectangle
-                x1 = 0
-                x2 = bar_length
-                y1 = 60 + num * 40
-                y2 = 90 + num * 40
+                x1 = margin
+                x2 = margin + bar_length
+                y1 = start_y + num * bar_spacing
+                y2 = y1 + bar_height
 
                 color = colors[num % len(colors)]
                 cv2.rectangle(image, (x1, y1), (x2, y2), color, -1)
 
                 # Left-aligned text
                 label = self.gesture_classes[num] if num < len(self.gesture_classes) else f"class_{num}"
-                cv2.putText(image, label, (0, 85 + num * 40),
-                           cv2.FONT_HERSHEY_SIMPLEX, 1, (255, 255, 255), 2, cv2.LINE_AA)
+                cv2.putText(image, label, (margin, y1 + bar_height - 2),
+                           cv2.FONT_HERSHEY_SIMPLEX, font_scale, (255, 255, 255), font_thickness, cv2.LINE_AA)
 
         return image
 
     def _draw_history(self, image: np.ndarray) -> np.ndarray:
-        """Draw gesture history."""
+        """Draw gesture history (scaled for small frame)."""
         h, w, _ = image.shape
-        x = w // 2 - 150
-        y = 30
+        x = w // 2 - 70
+        y = 12
 
-        cv2.putText(image, "Gesture History:", (x, y),
-                   cv2.FONT_HERSHEY_SIMPLEX, 0.6, (255, 255, 255), 1)
+        cv2.putText(image, "History:", (x, y),
+                   cv2.FONT_HERSHEY_SIMPLEX, 0.35, (255, 255, 255), 1)
 
         for i, entry in enumerate(reversed(list(self.gesture_display_history))):
-            if i >= 5:
+            if i >= 4:  # Show fewer entries
                 break
-            y_pos = y + 25 + (i * 20)
-            alpha = 1.0 - (i * 0.15)
+            y_pos = y + 12 + (i * 11)
+            alpha = 1.0 - (i * 0.2)
             color = (int(150 * alpha), int(255 * alpha), int(150 * alpha))
             cv2.putText(image, entry, (x, y_pos),
-                       cv2.FONT_HERSHEY_SIMPLEX, 0.45, color, 1)
+                       cv2.FONT_HERSHEY_SIMPLEX, 0.28, color, 1)
 
         return image
 

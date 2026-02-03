@@ -1,8 +1,8 @@
 gestures:
   Left_horizontal_swipe:
     actions:
-    - type: none
-      value: ''
+    - type: shortcut
+      value: ctrl+left
       label: ''
       delay: 0.17
   Left_swipeup:
@@ -48,13 +48,21 @@ gestures:
   Right_horizontal_swipe:
     actions:
     - type: shortcut
-      value: cmd+k+m
+      value: ctrl+right
       label: ''
       delay: 0.17
   Right_swipeup:
-    actions: []
+    actions:
+    - type: none
+      value: ''
+      label: ''
+      delay: 0.17
   Right_swipedown:
-    actions: []
+    actions:
+    - type: none
+      value: ''
+      label: ''
+      delay: 0.17
   Right_thumb_left:
     actions:
     - type: none
@@ -403,10 +411,10 @@ mouse:
   activation_threshold: 0.06
 inference:
   confidence_threshold: 0.4
-  stability_window: 7
+  stability_window: 4
   cooldown_frames: 12
   min_detection_confidence: 0.5
   min_tracking_confidence: 0.2
   model_complexity: 1
-theme: dark
+theme: darkq
 window_geometry: 1000x700

@@ -172,7 +172,7 @@ def preprocess_hand(
         data_path, actions, config.data.sequence_length, return_paths=True
     )
     logger.info(f"   Loaded {len(sequences)} sequences")
-    logger.info(f"   Raw shape: {sequences.shape}")
+    logger.info(f"   Raw keypoints shape: {sequences.shape} (21 landmarks × 4 = 84 raw features)")
     logger.info(f"{'='* 60}")
 
     # -------------------------------------------------
@@ -189,9 +189,11 @@ def preprocess_hand(
     # -------------------------------------------------
     logger.info("\n3. Applying feature engineering...")
     feature_engineer = FeatureEngineer()
+    logger.info(f"   FeatureEngineer output_dim: {feature_engineer.get_output_dim()}")
     X = apply_feature_engineering(sequences, feature_engineer)
     y = labels
-    logger.info(f"   Enhanced shape: {X.shape}")
+    logger.info(f"   Engineered features shape: {X.shape}")
+    logger.info(f"   ✅ Input dimension for model: {X.shape[-1]}")
     logger.info(f"{'='* 60}")
 
     # -------------------------------------------------

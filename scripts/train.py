@@ -158,6 +158,8 @@ def main() -> None:
     logger.info("✅ Data is loaded and merged from both hands")
     logger.info(f"   Training: {len(x_train)} samples")
     logger.info(f"   Validation: {len(x_val)} samples")
+    logger.info(f"   Data shape: {x_train.shape}")
+    logger.info(f"   ✅ Input dimension for model: {x_train.shape[-1]} features")
 
     # Update input dim to config
     config.model.input_dim = x_train.shape[-1]

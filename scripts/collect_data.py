@@ -7,6 +7,7 @@ Self collecitng data tool - left hand would be flip to match right hand orientat
 
 import sys
 import os
+import time
 import cv2
 import numpy as np
 import mediapipe as mp
@@ -39,9 +40,10 @@ class GUIDataCollector:
         self.swap_hands_var = tk.BooleanVar(value=False)
         
         self.trigger_record = False # Flag to bridge UI events to loop
-        
-        self.setup_ui()
-        # self.setup_bindings() 
+        self.is_running = False  # Track if collection is active
+        self.stop_flag = False
+
+        self.setup_ui() 
         
     def setup_ui(self):
         # -------------------------------------------------
@@ -93,12 +95,36 @@ class GUIDataCollector:
         self.btn_launch.pack(fill="x", pady=5)
         
         # Add a runtime Record button
-        self.btn_record = ttk.Button(control_frame, text="START RECORDING (Enter/Space)", command=lambda: self.set_trigger(True))
+        self.btn_record = ttk.Button(control_frame, text="START RECORDING (Enter/Space)", command=self.on_trigger)
         self.btn_record.pack(fill="x", pady=5)
         self.btn_record.state(['disabled'])
 
         # Initialize
         self.update_gestures()
+
+        # Bind keys to root window (works when tkinter window is focused)
+        # Return "break" to prevent default button activation
+        self.root.bind('<Return>', self._on_key_trigger)
+        self.root.bind('<space>', self._on_key_trigger)
+        self.root.bind('<Key-f>', self.toggle_flip)
+        self.root.bind('<Key-F>', self.toggle_flip)
+        self.root.bind('<Key-s>', self.toggle_swap)
+        self.root.bind('<Key-S>', self.toggle_swap)
+        self.root.bind('<Key-q>', self._on_quit_key)
+        self.root.bind('<Key-Q>', self._on_quit_key)
+        self.root.bind('<Escape>', self._on_quit_key)
+
+    def _on_key_trigger(self, event=None):
+        """Handle Enter/Space key - trigger recording and prevent default button behavior."""
+        if self.is_running:
+            self.trigger_record = True
+            print("[Trigger] Recording triggered!")
+        return "break"  # Prevent default tkinter behavior (button activation)
+
+    def _on_quit_key(self, event=None):
+        """Handle Q/ESC key - only quit if collector is running."""
+        if self.is_running:
+            self.stop_flag = True
 
     def update_gestures(self):
         hand = self.hand_var.get()
@@ -110,6 +136,7 @@ class GUIDataCollector:
             self.combo_gesture.current(0)
             
     def set_trigger(self, val):
+        """Set trigger flag - checked in process loop."""
         self.trigger_record = val
 
     def get_next_sequence_id(self, action_path):
@@ -135,18 +162,12 @@ class GUIDataCollector:
         
         return kp.flatten()
 
-    def setup_bindings(self):
-        # Global key bindings (work when GUI has focus)
-        self.root.bind('<Return>', self.on_trigger)
-        self.root.bind('<space>', self.on_trigger)
-        self.root.bind('f', self.toggle_flip)
-        self.root.bind('s', self.toggle_swap)
-        self.root.bind('q', self.stop_collection)
-        
     def on_trigger(self, event=None):
-        if self.is_running: # Only trigger if camera is open
-            if not self.is_recording:
-                self.is_recording = True
+        """Trigger recording - works from both Tkinter and OpenCV key events."""
+        if self.is_running:
+            # Always set trigger, even if already recording (will start new after current finishes)
+            self.trigger_record = True
+            print("[Trigger] Recording triggered!")
 
     def toggle_flip(self, event=None):
         if self.is_running:
@@ -171,6 +192,10 @@ class GUIDataCollector:
         except ValueError:
             cam_idx = 0
             
+        # Reset flags at start
+        self.stop_flag = False
+        self.trigger_record = False
+
         self.target_batch = self.batch_size_var.get()
         self.hand_selected = self.hand_var.get()
         
@@ -195,15 +220,27 @@ class GUIDataCollector:
         self.is_recording = False
         self.is_running = True
         self.zero_frame_count = 0
+        self.trigger_record = False  # Reset trigger flag
+
+        # FPS tracking and capping (use config value for consistency)
+        self.target_fps = getattr(self.config.data, 'target_fps', 20.0)  # From config
+        self.frame_interval = 1.0 / self.target_fps  # Time between frames (50ms for 20 FPS)
+        self.next_frame_time = time.time()  # When next frame should be captured
+        self.fps_counter = 0
+        self.fps_start_time = time.time()
+        self.current_fps = 0.0
+        print(f"[Collector] Target FPS: {self.target_fps}")
         
-        # Initialize MediaPipe Hands 
+        # Initialize MediaPipe Hands
         self.hands_module = self.mp_hands.Hands(
-            min_detection_confidence=self.config.mediapipe.min_detection_confidence, 
+            min_detection_confidence=self.config.mediapipe.min_detection_confidence,
             min_tracking_confidence=self.config.mediapipe.min_tracking_confidence,
             max_num_hands=1,
             model_complexity=self.config.mediapipe.model_complexity
         )
-        
+
+        print("[Collector] Keys: Enter/Space=Record, F=Flip, S=Swap, Q=Quit (focus OpenCV window)")
+
         # Start the loop
         self.process_frame()
 
@@ -211,26 +248,69 @@ class GUIDataCollector:
         """Cleanup and close camera"""
         if hasattr(self, 'is_running') and self.is_running:
             self.is_running = False
-            if hasattr(self, 'cap') and self.cap.isOpened():
+
+            if hasattr(self, 'cap') and self.cap and self.cap.isOpened():
                 self.cap.release()
-            if hasattr(self, 'hands_module'):
+            if hasattr(self, 'hands_module') and self.hands_module:
                 self.hands_module.close()
+                self.hands_module = None
+
             cv2.destroyAllWindows()
-            
+
             self.btn_record.state(['disabled'])
-            self.btn_launch.state(['!disabled']) # Re-enable launch
-            print("Collection Stopped.")
+            self.btn_launch.state(['!disabled'])  # Re-enable launch
+            self.stop_flag = False
+            self.trigger_record = False
+            print("[Collection] Stopped. Ready to start again.")
+
+    def _check_opencv_keys(self):
+        """Check for OpenCV key presses - called frequently."""
+        key = cv2.waitKey(1) & 0xFF
+        if key == ord('q') or key == ord('Q') or key == 27:  # q, Q, or ESC
+            self.stop_flag = True
+        elif key == 13 or key == 32:  # Enter or Space
+            self.trigger_record = True
+            print("[Trigger] Recording triggered!")
+        elif key == ord('f') or key == ord('F'):
+            self.flip_h_var.set(not self.flip_h_var.get())
+        elif key == ord('s') or key == ord('S'):
+            self.swap_hands_var.set(not self.swap_hands_var.get())
 
     def process_frame(self):
         """Single frame processing scheduled by root.after"""
-        if not self.is_running or not self.cap.isOpened():
+        if not self.is_running or not self.cap.isOpened() or self.stop_flag:
             self.stop_collection()
             return
-            
+
+        current_time = time.time()
+
+        # Always check for key presses (even during rate limiting wait)
+        self._check_opencv_keys()
+
+        # Check if it's time for next frame (rate limiting)
+        if current_time < self.next_frame_time:
+            # Not time yet, but keep polling keys frequently
+            self.root.after(5, self.process_frame)  # Poll every 5ms for responsive keys
+            return
+
+        # Update next frame time (increment to maintain exact interval)
+        self.next_frame_time += self.frame_interval
+        # Prevent drift if we fell behind
+        if current_time - self.next_frame_time > self.frame_interval:
+            self.next_frame_time = current_time + self.frame_interval
+
         ret, frame = self.cap.read()
         if not ret:
             self.stop_collection()
             return
+
+        # Calculate actual FPS
+        self.fps_counter += 1
+        elapsed = current_time - self.fps_start_time
+        if elapsed >= 1.0:
+            self.current_fps = self.fps_counter / elapsed
+            self.fps_counter = 0
+            self.fps_start_time = current_time
 
         # Get current settings
         flip_h = self.flip_h_var.get()
@@ -242,34 +322,27 @@ class GUIDataCollector:
             frame = cv2.flip(frame, 1)
         if flip_v:
             frame = cv2.flip(frame, 0)
-        
+
         image = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
         image.flags.writeable = False
         results = self.hands_module.process(image)
         image.flags.writeable = True
         image = cv2.cvtColor(image, cv2.COLOR_RGB2BGR)
-        
+
         # Draw and Extract
         self.draw_debug(image, results, flip_h, swap_hands)
-        
+
         # Collection Logic
         self.handle_collection(image, results, flip_h, swap_hands)
-        
-        cv2.imshow('HandFlow Collector (Press q in GUI to quit)', image)
-        
-        # Process OpenCV UI events and Input
-        key = cv2.waitKey(1) & 0xFF
-        if key == ord('q'):
-            self.stop_collection()
-            return
-        elif key == 13 or key == 10: # Enter
-            self.on_trigger()
-        elif key == ord('f'):
-            self.toggle_flip()
-        elif key == ord('s'):
-            self.toggle_swap()
-        
-        # Schedule next frame (minimal delay for max fps)
+
+        # Draw FPS (top-right corner)
+        h, w = image.shape[:2]
+        fps_text = f"FPS: {self.current_fps:.1f}"
+        cv2.putText(image, fps_text, (w - 150, 30), cv2.FONT_HERSHEY_SIMPLEX, 0.8, (0, 255, 0), 2)
+
+        cv2.imshow('HandFlow Collector [Enter/Space=Record | F=Flip | S=Swap | Q=Quit]', image)
+
+        # Schedule next iteration
         self.root.after(1, self.process_frame)
 
     def draw_debug(self, image, results, flip_h, swap_hands):
@@ -288,10 +361,15 @@ class GUIDataCollector:
 
     def handle_collection(self, image, results, flip_h, swap_hands):
         gesture = self.gesture_var.get()
-        
+
+        # Check trigger flag (from button or key bindings)
+        if self.trigger_record and not self.is_recording:
+            self.is_recording = True
+            self.trigger_record = False
+
         # Check if this is a "noise" gesture that should auto-collect
         is_noise_gesture = gesture.lower() in ['none', 'nonezoom', 'touch_hover', 'touch_hold']
-        
+
         # Check if batch is done
         if self.batch_count >= self.target_batch:
             cv2.putText(image, "BATCH COMPLETE! (Enter/Space to restart)", (50, 300), 

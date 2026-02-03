@@ -13,6 +13,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Optional
 
 import numpy as np
+from sklearn.utils.class_weight import compute_class_weight
 from tensorflow import keras
 
 from handflow.utils.logging import get_logger
@@ -105,6 +106,7 @@ class Trainer:
         model: keras.Model,
         experiment_name: str = "handflow-training",
         use_augmentation: bool = True,
+        use_class_weights: bool = True,
     ) -> None:
         """
         Initialize trainer.
@@ -113,13 +115,14 @@ class Trainer:
             config: Training configuration.
             model: Compiled Keras model.
             experiment_name: Name for experiment tracking.
-            use_wandb: Whether to log to Weights & Biases (overrides config).
             use_augmentation: Whether to apply on-the-fly augmentation.
+            use_class_weights: Whether to use class weighting for imbalanced data.
         """
         self.config = config
         self.model = model
         self.experiment_name = experiment_name
         self.use_augmentation = use_augmentation
+        self.use_class_weights = use_class_weights
         self.history: keras.callbacks.History | None = None
         self.augmenter: SequenceAugmenter | None = None
         self.logger = get_logger("handflow.trainer")
@@ -163,8 +166,47 @@ class Trainer:
                 self.augmenter = SequenceAugmenter(self.config)
                 self.logger.info("On-the-fly augmentation enabled")
             except ImportError:
-                self.logger.warning("⚠️ Warning: Augmentation module not found. Skipping augmentation.")
+                self.logger.warning("Augmentation module not found. Skipping augmentation.")
                 self.use_augmentation = False
+
+    def _compute_class_weights(self, y_train: np.ndarray) -> dict[int, float]:
+        """
+        Compute class weights for imbalanced data.
+
+        Uses 'balanced' mode which sets weights inversely proportional to
+        class frequencies: n_samples / (n_classes * np.bincount(y))
+
+        Args:
+            y_train: One-hot encoded labels, shape (n_samples, n_classes)
+
+        Returns:
+            Dictionary mapping class index to weight
+        """
+        # Convert one-hot to class indices
+        y_indices = np.argmax(y_train, axis=1)
+
+        # Get unique classes present in training data
+        classes = np.unique(y_indices)
+
+        # Compute balanced class weights
+        weights = compute_class_weight(
+            class_weight='balanced',
+            classes=classes,
+            y=y_indices
+        )
+
+        # Create dict mapping class index to weight
+        class_weight_dict = {int(cls): float(w) for cls, w in zip(classes, weights)}
+
+        # Log class distribution and weights
+        class_names = self.config.model.gestures
+        self.logger.info("Class weights computed:")
+        for cls_idx, weight in sorted(class_weight_dict.items()):
+            count = np.sum(y_indices == cls_idx)
+            name = class_names[cls_idx] if cls_idx < len(class_names) else f"class_{cls_idx}"
+            self.logger.info(f"  {name}: {count} samples, weight={weight:.3f}")
+
+        return class_weight_dict
 
     def _build_run_config(
         self,
@@ -217,10 +259,14 @@ class Trainer:
             "augmentation/n_variants": aug_cfg.n_variants if self.use_augmentation else 0,
             "augmentation/noise_prob": aug_cfg.noise_prob if self.use_augmentation else 0,
             "augmentation/noise_std": aug_cfg.noise_std if self.use_augmentation else 0,
+            "augmentation/time_warp_enabled": getattr(aug_cfg, 'time_warp_enabled', False) if self.use_augmentation else False,
             "augmentation/time_warp_prob": aug_cfg.time_warp_prob if self.use_augmentation else 0,
             "augmentation/dropout_prob": aug_cfg.dropout_prob if self.use_augmentation else 0,
             "augmentation/scale_prob": aug_cfg.scale_prob if self.use_augmentation else 0,
             "augmentation/rotation_prob": aug_cfg.rotation_prob if self.use_augmentation else 0,
+
+            # Class weighting
+            "training/class_weights_enabled": self.use_class_weights,
 
             # Data info
             "data/training_samples": len(x_train),
@@ -262,13 +308,28 @@ class Trainer:
         if x_val is not None and y_val is not None:
             validation_data = (x_val, y_val)
         elif train_config.validation_split > 0:
-            validation_data = None  
+            validation_data = None
+
+        # Compute class weights if enabled
+        class_weight = None
+        if self.use_class_weights:
+            class_weight = self._compute_class_weights(y_train)
+            self.logger.info("Class weighting enabled for training")
 
         # Build callbacks
         callbacks = self._build_callbacks(run_name)
 
         # Start experiment tracking run with full configuration
         run_config = self._build_run_config(x_train, x_val)
+
+        # Add class weight info to run config
+        if class_weight is not None:
+            class_names = self.config.model.gestures
+            y_indices = np.argmax(y_train, axis=1)
+            for cls_idx, weight in class_weight.items():
+                name = class_names[cls_idx] if cls_idx < len(class_names) else f"class_{cls_idx}"
+                run_config[f"class_weight/{name}"] = weight
+                run_config[f"class_count/{name}"] = int(np.sum(y_indices == cls_idx))
 
         if self.tracker:
             self.tracker.start_run(run_name, run_config)
@@ -292,6 +353,7 @@ class Trainer:
                     epochs=train_config.epochs,
                     validation_data=validation_data,
                     callbacks=callbacks,
+                    class_weight=class_weight,
                     verbose=1,
                 )
             else:
@@ -306,6 +368,7 @@ class Trainer:
                         train_config.validation_split if validation_data is None else 0
                     ),
                     callbacks=callbacks,
+                    class_weight=class_weight,
                     verbose=1,
                 )
 
@@ -339,11 +402,11 @@ class Trainer:
         callbacks.append(
             keras.callbacks.ModelCheckpoint(
                 filepath=str(checkpoint_dir / f"{run_name}_best.h5"),
-                monitor="val_loss" if train_config.validation_split > 0 else "loss",
+                monitor="val_accuracy" if train_config.validation_split > 0 else "accuracy",
+                mode="max",
                 save_best_only=True,
                 verbose=1,
             )
-            
         )
 
         # Learning rate reducer
@@ -420,7 +483,7 @@ class Trainer:
 
             # Use class names from config if not provided
             if class_names is None:
-                class_names = self.config.gestures.right_hand
+                class_names = self.config.model.gestures
 
             self.tracker.log_confusion_matrix(
                 y_true=y_true.tolist(),

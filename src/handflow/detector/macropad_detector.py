@@ -158,8 +158,10 @@ class MacroPadDetector:
         self._current_set_marker_id: Optional[int] = None
         
         # Marker cache for occlusion handling
-        # Stores (center, corners) for the 4 CORNER markers
+        # Stores (center, corners) for all markers by position name
         self._marker_cache: Dict[str, Tuple[np.ndarray, np.ndarray]] = {} 
+        # Cached detection region corners (TL, TR, BR, BL) when all 4 are visible
+        self._cached_region_corners: Optional[Dict[str, np.ndarray]] = None
         self._estimated_pos_names: set = set()
         
     def detect(self, frame: np.ndarray, known_set_ids: List[int] = None) -> bool:

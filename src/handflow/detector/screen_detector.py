@@ -148,6 +148,11 @@ class ArUcoScreenDetector:
         self._cache_max_frames: int = 30  # Max frames to use cached data (~1 sec at 30fps)
         self._estimated_markers: set = set()  # Track which markers are currently estimated
 
+        # Detection persistence - don't invalidate immediately on detection failure
+        # This prevents jittering when detection fails briefly
+        self._valid_grace_counter: int = 0
+        self._valid_grace_max: int = 3  # Keep valid for N failed detections before invalidating
+
         # Side pairs for motion compensation
         # When one marker is blocked, use its pair on the same side
         self._side_pairs = {
@@ -282,8 +287,15 @@ class ArUcoScreenDetector:
 
         # Need at least 4 markers (detected or estimated) to proceed
         if len(marker_data) < 4:
-            self._detection_valid = False
-            return False
+            # Use grace period - don't invalidate immediately
+            if self._detection_valid:
+                self._valid_grace_counter += 1
+                if self._valid_grace_counter >= self._valid_grace_max:
+                    # Grace expired, actually invalidate
+                    self._detection_valid = False
+                    self._valid_grace_counter = 0
+                # Keep using cached homography during grace period
+            return self._detection_valid
 
         # Average marker width for offset calculations
         self._last_marker_width = np.mean([w for _, w in marker_data.values()])
@@ -300,6 +312,9 @@ class ArUcoScreenDetector:
         )
 
         self._detection_valid = self._last_homography is not None
+        # Reset grace counter on successful detection
+        if self._detection_valid:
+            self._valid_grace_counter = 0
         return self._detection_valid
 
     def _estimate_missing_marker(

@@ -46,9 +46,12 @@ class SequenceAugmenter:
         # if np.random.rand() < self.config.augmentation.noise_prob:
         #     seq = self._add_noise(seq)
 
+        # Time warp (disabled by default - check time_warp_enabled flag)
+        time_warp_enabled = getattr(self.config.augmentation, 'time_warp_enabled', False)
         if (
-            np.random.rand() < self.config.augmentation.time_warp_prob
-            and len(seq) >= self.config.augmentation.min_timewarp_frames 
+            time_warp_enabled
+            and np.random.rand() < self.config.augmentation.time_warp_prob
+            and len(seq) >= self.config.augmentation.min_timewarp_frames
         ):
             seq = self._time_warp(seq)
 
@@ -109,24 +112,41 @@ class SequenceAugmenter:
         return sequence + noise
 
     def _time_warp(self, sequence: np.ndarray) -> np.ndarray:
+        """
+        Time warp augmentation - simulates faster/slower gesture performance.
+
+        - warp > 1 (stretch): Gesture performed slower, interpolate more intermediate frames
+        - warp < 1 (compress): Gesture performed faster, fewer intermediate frames
+
+        Both cases resample back to original seq_len to maintain fixed input size.
+        This simulates natural variation in gesture speed while preserving the gesture's
+        characteristic motion pattern.
+        """
         seq_len, feat_dim = sequence.shape
         warp = np.random.uniform(
             1 - self.config.augmentation.time_warp_factor,
             1 + self.config.augmentation.time_warp_factor
         )
 
-        src = np.arange(seq_len)
-        tgt_len = max(seq_len, int(seq_len * warp))
-        tgt = np.linspace(0, seq_len - 1, tgt_len)
+        # Calculate warped length (can be smaller OR larger than seq_len)
+        tgt_len = int(seq_len * warp)
+        tgt_len = max(2, tgt_len)  # Ensure at least 2 frames for valid interpolation
+
+        # Step 1: Resample original sequence to warped length
+        # This simulates the gesture happening at a different speed
+        src_indices = np.arange(seq_len)
+        tgt_indices = np.linspace(0, seq_len - 1, tgt_len)
 
         warped = np.zeros((tgt_len, feat_dim))
         for d in range(feat_dim):
-            warped[:, d] = np.interp(tgt, src, sequence[:, d])
+            warped[:, d] = np.interp(tgt_indices, src_indices, sequence[:, d])
 
-        final = np.linspace(0, tgt_len - 1, seq_len)
+        # Step 2: Resample warped sequence back to original length
+        # This ensures consistent input size for the model
+        final_indices = np.linspace(0, tgt_len - 1, seq_len)
         out = np.zeros_like(sequence)
         for d in range(feat_dim):
-            out[:, d] = np.interp(final, np.arange(tgt_len), warped[:, d])
+            out[:, d] = np.interp(final_indices, np.arange(tgt_len), warped[:, d])
 
         return out
 

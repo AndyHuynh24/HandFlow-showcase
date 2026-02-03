@@ -79,7 +79,7 @@ def export_to_tflite(
         model.compile(optimizer='adam', loss='categorical_crossentropy', metrics=['accuracy'])
     model.summary()
     
-    print(f"\n🔧 Converting to TFLite (quantize={quantize})...")
+    #print(f"\n🔧 Converting to TFLite (quantize={quantize})...")
     
     # For Keras 3 compatibility, save as SavedModel first then convert
     import tempfile

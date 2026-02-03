@@ -81,7 +81,7 @@ def build_lstm_model(config: Config) -> keras.Model:
     Returns:
         Keras Sequential model.
     """
-    input_dim = config.model.input_dim()
+    input_dim = config.model.input_dim
     seq_len = config.data.sequence_length
     hidden_units = config.model.hidden_units
     dropout = config.model.dropout
@@ -120,7 +120,7 @@ def build_gru_model(config: Config) -> keras.Model:
     Returns:
         Keras Sequential model.
     """
-    input_dim = config.model.input_dim()
+    input_dim = config.model.input_dim
     seq_len = config.data.sequence_length
     hidden_units = config.model.hidden_units
     dropout = config.model.dropout
