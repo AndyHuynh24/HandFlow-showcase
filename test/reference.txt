@@ -79,7 +79,7 @@ THIS IS EXAMPLE OF A REFERENCE
 For this demo I use this to know what to do next
 ========================================
 
-def main():
+def main():km
     cap = cv2.VideoCapture(1)         
     while True:
         ret, frame = cap.read()        
