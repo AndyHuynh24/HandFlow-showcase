@@ -219,6 +219,8 @@ class DetectionWindow(ctk.CTkToplevel):
         self._paper_feedback = PaperMacroPadFeedback()
         self._paper_feedback_last_hover: Optional[int] = None
         self._paper_feedback_last_activated: Optional[int] = None
+        # Track last activation time to detect new activations reliably
+        self._paper_feedback_last_activation_time: float = 0.0
 
         # State
         self._running = False
@@ -641,10 +643,16 @@ class DetectionWindow(ctk.CTkToplevel):
                             break
                     self._last_gesture = current_gesture
 
+                    # Get right hand gesture specifically for screen overlay (only right hand triggers overlay)
+                    right_hand_gesture = "none"
+                    if 'Right' in detections and 'gesture' in detections['Right']:
+                        right_hand_gesture = detections['Right']['gesture']
+
                     # 6. Screen Overlay MacroPad handling (if enabled)
                     # Overlay displays markers, macropad_manager handles detection
+                    # Only right hand can trigger screen overlay (left hand gestures ignored)
                     if self._screen_overlay is not None and self.setting.screen_overlay_macropad_enabled:
-                        self._handle_screen_overlay(current_gesture)
+                        self._handle_screen_overlay(right_hand_gesture)
                     
                     # 7. Draw debug overlays (ArUco and MacroPad) - skip if drawing disabled
                     if not self._disable_drawing:
@@ -652,9 +660,9 @@ class DetectionWindow(ctk.CTkToplevel):
 
                     if self.setting.macropad_enabled:
                         # Update finger state for macropad interaction
-                        primary_hand = 'Right' if 'Right' in detections else 'Left'
-                        if primary_hand in detections:
-                            info = detections[primary_hand]
+                        # Only right hand can interact with macropad (left hand gestures ignored)
+                        if 'Right' in detections:
+                            info = detections['Right']
                             if 'index_tip' in info:
                                 idx_norm = info['index_tip']
                                 pixel_tip = (idx_norm[0] * w_small, idx_norm[1] * h_small)
@@ -868,13 +876,15 @@ class DetectionWindow(ctk.CTkToplevel):
             self._paper_feedback.set_hovered_button(current_hover)
             self._paper_feedback_last_hover = current_hover
 
-        # Check for activation (button was successfully triggered)
-        activated = self.macropad_manager._activated_button
-        if activated is not None and activated != self._paper_feedback_last_activated:
-            self._paper_feedback.show_click_feedback(activated)
-            self._paper_feedback_last_activated = activated
-        elif activated is None:
-            self._paper_feedback_last_activated = None
+        # Check for activation using activation log (more reliable than _activated_button)
+        # The log has timestamps so we can detect new activations even if _activated_button was cleared
+        activation_log = self.macropad_manager._activation_log
+        if activation_log:
+            latest_activation = activation_log[-1]
+            # Check if this is a new activation (timestamp changed)
+            if latest_activation.timestamp > self._paper_feedback_last_activation_time:
+                self._paper_feedback.show_click_feedback(latest_activation.button_idx)
+                self._paper_feedback_last_activation_time = latest_activation.timestamp
 
         # Process Tk events
         self._paper_feedback.update()

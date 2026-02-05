@@ -57,6 +57,10 @@ class PaperMacroPadFeedback:
         # Auto-hide timer ID
         self._hide_timer_id: Optional[str] = None
 
+        # Click feedback state - prevents hover from interrupting click feedback
+        self._showing_click_feedback: bool = False
+        self._click_feedback_timer_id: Optional[str] = None
+
         self.logger.info("[PaperFeedback] Initialized")
 
     def set_button_labels(self, labels: List[str]):
@@ -274,6 +278,10 @@ class PaperMacroPadFeedback:
         if not self._window_created:
             self._create_window()
 
+        # Don't interrupt click feedback - it takes priority
+        if self._showing_click_feedback:
+            return
+
         if button_idx == self._current_hover:
             return
 
@@ -292,23 +300,36 @@ class PaperMacroPadFeedback:
             self._hide()
 
     def show_click_feedback(self, button_idx: int):
-        """Show brief click confirmation."""
+        """Show brief click confirmation that persists even after touch ends."""
         if not self._window_created:
             self._create_window()
 
         if not self._root:
             return
 
-        # Cancel any pending hide timer
+        # Cancel any pending timers
         if self._hide_timer_id:
             self._root.after_cancel(self._hide_timer_id)
+            self._hide_timer_id = None
+        if self._click_feedback_timer_id:
+            self._root.after_cancel(self._click_feedback_timer_id)
+            self._click_feedback_timer_id = None
+
+        # Set flag to prevent hover from interrupting
+        self._showing_click_feedback = True
 
         label = self._button_labels[button_idx] if button_idx < len(self._button_labels) else f"Button {button_idx + 1}"
         self._draw_click(label, button_idx + 1)
         self._show()
 
-        # Auto-hide after 150ms
-        self._hide_timer_id = self._root.after(150, self._hide)
+        # Auto-hide after 400ms (longer duration for visibility)
+        self._click_feedback_timer_id = self._root.after(400, self._end_click_feedback)
+
+    def _end_click_feedback(self):
+        """End click feedback and hide overlay."""
+        self._showing_click_feedback = False
+        self._click_feedback_timer_id = None
+        self._hide()
 
     def update(self):
         """Process Tk events."""
