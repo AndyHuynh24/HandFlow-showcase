@@ -79,7 +79,7 @@ THIS IS EXAMPLE OF A REFERENCE
 For this demo I use this to know what to do next
 ========================================
 
-def main():km
+def main():
     cap = cv2.VideoCapture(1)         
     while True:
         ret, frame = cap.read()        
@@ -89,9 +89,6 @@ def main():km
         # Draw rectangle                
         cv2.rectangle(frame, (100, 100), (650, 600), (0, 255, 0), 2)
 
-        # Draw text                    
-        cv2.putText(frame, 'OpenCV Demo', (150, 300), cv2.FONT_HERSHEY_SIMPLEX, 2, (255, 255, 255), 2)
-        
         cv2.imshow('frame', frame)
         if cv2.waitKey(1) & 0xFF == ord('q'):
             break

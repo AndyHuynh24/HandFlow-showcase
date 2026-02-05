@@ -234,12 +234,12 @@ class DetectionWindow(ctk.CTkToplevel):
         config = load_config("config/config.yaml")
         self._target_fps = getattr(config.data, 'target_fps', 20.0)
         self._frame_duration = 1.0 / self._target_fps
-        self._gesture_model_interval = 1  # Run gesture TCN model every frame (adaptive sampling handles data rate)
-        self._aruco_interval = 2  # Run ArUco/MacroPad every N frames
+        self._gesture_model_interval = 2  # Run gesture TCN model every 2 frames
+        self._aruco_interval = 2  # Run ArUco/MacroPad every 2 frames
         self._frame_count = 0
         self._last_detection_results = None  # Cache detection results
 
-        # Resolution for MediaPipe - use 16:9 to match training data (1280x720)
+        # Resolution for MediaPipe processing - use 16:9 to match training data
         # 640x360 maintains aspect ratio while being lower resolution for speed
         self._mp_width = 640
         self._mp_height = 360
@@ -337,9 +337,10 @@ class DetectionWindow(ctk.CTkToplevel):
         self._recording_thread = threading.Thread(target=self._recording_loop, daemon=True)
         self._recording_thread.start()
 
-        fps = self._target_fps
-        self.logger.info(f"[Recording] Started: {self._recording_filename} @ {fps} FPS")
-        print(f"[Recording] Started: {self._recording_filename} @ {fps} FPS")
+        # Use camera FPS (30) for recording, not target_fps (20) which is for gesture detection
+        self._recording_fps = 30
+        self.logger.info(f"[Recording] Started: {self._recording_filename} @ {self._recording_fps} FPS")
+        print(f"[Recording] Started: {self._recording_filename} @ {self._recording_fps} FPS")
 
     def _recording_loop(self):
         """Recording thread - simple queue consumer with lower priority."""
@@ -357,7 +358,7 @@ class DetectionWindow(ctk.CTkToplevel):
             except:
                 pass
 
-        fps = self._target_fps
+        fps = self._recording_fps  # Use camera FPS (30) for correct playback speed
         fourcc = cv2.VideoWriter_fourcc(*'mp4v')
         writer = None  # Initialize lazily with actual frame size
 
@@ -514,10 +515,10 @@ class DetectionWindow(ctk.CTkToplevel):
         try:
             self._cap = cv2.VideoCapture(cam_idx)
 
-            # Optimize camera - use 16:9 aspect ratio to match training data
-            # 1280x720 matches data collection, then resize to 640x360 for MediaPipe
-            self._cap.set(cv2.CAP_PROP_FRAME_WIDTH, 1280)
-            self._cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 720)
+            # Use 1920x1080 for high quality recording
+            # Resized to smaller resolution internally for processing
+            self._cap.set(cv2.CAP_PROP_FRAME_WIDTH, 1920)
+            self._cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 1080)
             self._cap.set(cv2.CAP_PROP_FPS, 30)
             # Minimize buffer for lowest latency (1 frame = most recent)
             self._cap.set(cv2.CAP_PROP_BUFFERSIZE, 1)
@@ -767,9 +768,9 @@ class DetectionWindow(ctk.CTkToplevel):
         # Process paper macropad feedback (only when screen overlay is NOT visible)
         self._process_paper_feedback()
 
-        # Schedule next update (~24 FPS - sufficient for preview, saves CPU)
+        # Schedule next update (~20 FPS - sufficient for preview, saves CPU)
         if self._running:
-            self.after(42, self._update_ui)
+            self.after(50, self._update_ui)
 
     def _process_overlay_commands(self):
         """

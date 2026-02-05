@@ -172,16 +172,28 @@ class MacroPadDetector:
         self._last_detection: Optional[MacroPadDetection] = None
         self._detection_valid = False
         self._current_set_marker_id: Optional[int] = None
-        
+
         # Marker cache for occlusion handling
         # Stores (center, corners) for all markers by position name
-        self._marker_cache: Dict[str, Tuple[np.ndarray, np.ndarray]] = {} 
+        self._marker_cache: Dict[str, Tuple[np.ndarray, np.ndarray]] = {}
         # Cached detection region corners (TL, TR, BR, BL) when all 4 are visible
         self._cached_region_corners: Optional[Dict[str, np.ndarray]] = None
         # Cached middle marker centers for translation calculation
         self._cached_ml_center: Optional[np.ndarray] = None
         self._cached_mr_center: Optional[np.ndarray] = None
         self._estimated_pos_names: set = set()
+
+        # Temporal smoothing for detection region (reduces jitter)
+        # EMA smoothing factor: higher = more responsive, lower = smoother
+        # 0.75 is more responsive for fast head movements
+        self._smoothing_alpha: float = 0.75
+        self._smoothed_region: Optional[np.ndarray] = None
+
+        # Outlier rejection - max allowed jump distance (pixels) between frames
+        # If a marker jumps more than this, it's likely a false positive
+        # Increased to 250 for fast head movements
+        self._max_jump_distance: float = 250.0
+        self._last_marker_centers: Dict[int, np.ndarray] = {}  # marker_id -> last center
         
     def detect(self, frame: np.ndarray, known_set_ids: List[int] = None) -> bool:
         """
@@ -224,13 +236,25 @@ class MacroPadDetector:
             return False
         
         # -------------------------------------------------
-        # 1. Map all detected markers by ID
+        # 1. Map all detected markers by ID (with outlier rejection)
         # -------------------------------------------------
         detected_data: Dict[int, Tuple[np.ndarray, np.ndarray]] = {} # id -> (center, corners)
         for i, marker_id in enumerate(ids.flatten()):
             marker_corners = corners[i][0]
             center = np.mean(marker_corners, axis=0)
+
+            # Outlier rejection: check if marker jumped too far from last position
+            if marker_id in self._last_marker_centers:
+                last_center = self._last_marker_centers[marker_id]
+                jump_distance = np.linalg.norm(center - last_center)
+                if jump_distance > self._max_jump_distance:
+                    # This detection is likely a false positive (text, noise, etc.)
+                    # Skip it and let the estimation logic handle this marker
+                    continue
+
             detected_data[marker_id] = (center, marker_corners)
+            # Update last known center for next frame's outlier rejection
+            self._last_marker_centers[marker_id] = center.copy()
             
         # -------------------------------------------------
         # 2. Identify Set ID (TL marker)
@@ -518,7 +542,19 @@ class MacroPadDetector:
         br_corner = region_corners['BR']
         bl_corner = region_corners['BL']
 
-        detection_region = np.array([tl_corner, tr_corner, br_corner, bl_corner], dtype=np.float32)
+        raw_region = np.array([tl_corner, tr_corner, br_corner, bl_corner], dtype=np.float32)
+
+        # Apply temporal smoothing (EMA) to reduce jitter
+        if self._smoothed_region is None:
+            self._smoothed_region = raw_region.copy()
+        else:
+            # Exponential moving average: new = alpha * raw + (1-alpha) * old
+            self._smoothed_region = (
+                self._smoothing_alpha * raw_region +
+                (1 - self._smoothing_alpha) * self._smoothed_region
+            )
+
+        detection_region = self._smoothed_region.copy()
         
         # -------------------------------------------------
         # 7. Compute variables for result
@@ -735,3 +771,5 @@ class MacroPadDetector:
         self._cached_mr_center = None
         self._estimated_pos_names.clear()
         self._current_set_marker_id = None
+        self._smoothed_region = None
+        self._last_marker_centers.clear()

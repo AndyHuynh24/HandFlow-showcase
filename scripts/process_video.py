@@ -33,6 +33,7 @@ from collections import deque
 sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
 
 import mediapipe as mp
+import tensorflow as tf
 from handflow.utils import load_config, load_setting, Setting
 from handflow.features import FeatureEngineer
 from handflow.detector.handedness_tracker import HandTracker
@@ -141,6 +142,25 @@ def draw_elegant_connection(
 ):
     """Draw an elegant connection line with anti-aliasing."""
     cv2.line(frame, pt1, pt2, color, thickness, cv2.LINE_AA)
+
+
+def draw_touch_effect(
+    frame: np.ndarray,
+    x: int, y: int,
+    intensity: float = 1.0
+):
+    """Draw a touch visual effect (ripple/glow) at the given position."""
+    # Simplified touch effect - no expensive overlay copies
+    # Outer rings (just draw directly)
+    cv2.circle(frame, (x, y), int(35 * intensity), (0, 200, 200), 2, cv2.LINE_AA)
+    cv2.circle(frame, (x, y), int(25 * intensity), (0, 230, 230), 2, cv2.LINE_AA)
+    cv2.circle(frame, (x, y), int(15 * intensity), (0, 255, 255), 2, cv2.LINE_AA)
+
+    # Inner glow
+    cv2.circle(frame, (x, y), int(10 * intensity), (0, 255, 255), -1, cv2.LINE_AA)
+
+    # Bright center
+    cv2.circle(frame, (x, y), int(5 * intensity), (255, 255, 255), -1, cv2.LINE_AA)
 
 
 # ============================================================
@@ -259,24 +279,21 @@ def draw_elegant_macropad(
         # Draw cell border
         cv2.polylines(frame, [cell_pts], True, color, thickness, cv2.LINE_AA)
 
-        # Draw button label (subtle, centered)
-        center = np.mean(cell, axis=0).astype(int)
-        if button_names and idx < len(button_names) and button_names[idx]:
-            label = button_names[idx][:6]  # Truncate long names
-        else:
-            label = str(idx + 1)
-
-        # Subtle label
-        label_color = (0, 255, 200) if idx == hovered_button else (120, 100, 80)
-        (tw, th), _ = cv2.getTextSize(label, cv2.FONT_HERSHEY_SIMPLEX, 0.35, 1)
-        cv2.putText(frame, label, (center[0] - tw // 2, center[1] + th // 2),
-                   cv2.FONT_HERSHEY_SIMPLEX, 0.35, label_color, 1, cv2.LINE_AA)
-
-    # Draw subtle "MACROPAD" label
+    # Draw prominent "MACROPAD" title label
     top_center = ((detection.detection_region[0] + detection.detection_region[1]) / 2).astype(int)
-    label_pos = (top_center[0] - 35, top_center[1] - 8)
-    draw_text_with_shadow(frame, "MACROPAD", label_pos, font_scale=0.35,
-                         color=(180, 140, 50), thickness=1, shadow_offset=1)
+    label_text = "MACROPAD"
+    font_scale = 1.2
+    label_thickness = 3
+    (tw, th), _ = cv2.getTextSize(label_text, cv2.FONT_HERSHEY_SIMPLEX, font_scale, label_thickness)
+    label_pos = (top_center[0] - tw // 2, top_center[1] - 15)
+
+    # Draw with glow effect for maximum visibility
+    # Outer glow
+    cv2.putText(frame, label_text, (label_pos[0], label_pos[1]),
+               cv2.FONT_HERSHEY_SIMPLEX, font_scale, (0, 0, 0), label_thickness + 4, cv2.LINE_AA)
+    # Main text - bright cyan/yellow for attention
+    cv2.putText(frame, label_text, (label_pos[0], label_pos[1]),
+               cv2.FONT_HERSHEY_SIMPLEX, font_scale, (0, 255, 255), label_thickness, cv2.LINE_AA)
 
 
 # ============================================================
@@ -346,36 +363,120 @@ def draw_elegant_hand(
         else:  # Joints - small
             draw_elegant_landmark(frame, x, y, base_color, size=3, glow=False)
 
-    # Draw gesture label above hand bounding box (only when show_gesture_label is True)
-    if landmarks and show_gesture_label and gesture != "none":
-        # Calculate bounding box of hand
-        xs = [pt[0] for pt in landmarks]
-        ys = [pt[1] for pt in landmarks]
-        min_x, max_x = min(xs), max(xs)
-        min_y, max_y = min(ys), max(ys)
+    # Draw touch effect at index fingertip when touch gesture detected
+    if gesture in ('touch', 'touch_hold') and len(landmarks) > 8:
+        index_tip = landmarks[8]
+        draw_touch_effect(frame, index_tip[0], index_tip[1])
 
-        # Position label above the bounding box, centered
-        center_x = (min_x + max_x) // 2
-        label_y = min_y - 15  # Above the top of the hand
 
-        # Ensure label stays on screen
-        label_y = max(25, label_y)
+def draw_skeleton_frame(
+    frame_shape: Tuple[int, int, int],
+    detections: Dict,
+    gesture_counters: Dict[str, int],
+    last_gestures: Dict[str, str]
+) -> np.ndarray:
+    """
+    Create a skeleton-only frame with black background.
+    Includes hand skeleton and touch effects.
+    """
+    h, w = frame_shape[:2]
+    # Black background
+    skeleton_frame = np.zeros((h, w, 3), dtype=np.uint8)
 
-        # Draw gesture label
-        label_text = gesture
-        (text_w, text_h), _ = cv2.getTextSize(label_text, cv2.FONT_HERSHEY_SIMPLEX, 0.7, 2)
-        label_x = center_x - text_w // 2
+    # Draw each detected hand
+    for handedness, data in detections.items():
+        landmarks = data.get('landmarks', [])
+        gesture = data.get('gesture', 'none')
 
-        # Ensure label stays within frame
-        label_x = max(5, min(label_x, w - text_w - 5))
+        if not landmarks:
+            continue
 
-        draw_text_with_shadow(
-            frame, label_text,
-            (label_x, label_y),
-            font_scale=0.7,
-            color=base_color,
-            thickness=2
-        )
+        # Choose color based on hand
+        if handedness == "Right":
+            base_color = Colors.RIGHT_HAND
+            accent_color = (255, 150, 50)
+        else:
+            base_color = Colors.LEFT_HAND
+            accent_color = (50, 150, 255)
+
+        # Modify color based on gesture
+        if gesture in ('touch', 'touch_hold'):
+            base_color = Colors.GESTURE_TOUCH
+        elif gesture != 'none':
+            base_color = Colors.GESTURE_ACTIVE
+
+        # Draw connections
+        for conn in HAND_CONNECTIONS:
+            if conn[0] < len(landmarks) and conn[1] < len(landmarks):
+                pt1 = landmarks[conn[0]]
+                pt2 = landmarks[conn[1]]
+                thickness = 2 if conn[1] in FINGERTIPS else 3
+                cv2.line(skeleton_frame, pt1, pt2, base_color, thickness, cv2.LINE_AA)
+
+        # Draw landmarks
+        for i, (x, y) in enumerate(landmarks):
+            if i == 0:  # Wrist
+                cv2.circle(skeleton_frame, (x, y), 6, base_color, -1, cv2.LINE_AA)
+            elif i in FINGERTIPS:  # Fingertips
+                cv2.circle(skeleton_frame, (x, y), 5, accent_color, -1, cv2.LINE_AA)
+            else:  # Joints
+                cv2.circle(skeleton_frame, (x, y), 3, base_color, -1, cv2.LINE_AA)
+
+        # Draw touch effect at index fingertip when touch gesture detected
+        if gesture in ('touch', 'touch_hold') and len(landmarks) > 8:
+            index_tip = landmarks[8]
+            draw_touch_effect(skeleton_frame, index_tip[0], index_tip[1])
+
+    return skeleton_frame
+
+
+def draw_gesture_label_top_center(
+    frame: np.ndarray,
+    gesture: str,
+    handedness: str,
+    offset_index: int = 0
+):
+    """Draw gesture label at top center of frame."""
+    if frame is None or gesture is None:
+        return
+
+    h, w = frame.shape[:2]
+
+    # Choose color based on hand
+    if handedness == "Right":
+        color = Colors.RIGHT_HAND
+    else:
+        color = Colors.LEFT_HAND
+
+    # Modify color based on gesture type
+    if gesture in ('touch', 'touch_hold'):
+        color = Colors.GESTURE_TOUCH
+    elif gesture != 'none':
+        color = Colors.GESTURE_ACTIVE
+
+    # Draw at top center (offset vertically if multiple gestures)
+    label_text = str(gesture)
+    font_scale = 1.2
+    thickness = 3
+
+    (text_w, text_h), _ = cv2.getTextSize(label_text, cv2.FONT_HERSHEY_SIMPLEX, font_scale, thickness)
+    label_x = int((w - text_w) // 2)
+    label_y = int(150 + (offset_index * 55))  # Stack vertically if multiple gestures
+
+    # Draw background for better visibility (with bounds checking)
+    padding = 10
+    rect_x1 = max(0, label_x - padding)
+    rect_y1 = max(0, label_y - text_h - padding)
+    rect_x2 = min(w, label_x + text_w + padding)
+    rect_y2 = min(h, label_y + padding)
+
+    cv2.rectangle(frame, (rect_x1, rect_y1), (rect_x2, rect_y2), (0, 0, 0), -1)
+
+    # Draw text with shadow for visibility
+    cv2.putText(frame, label_text, (label_x + 2, label_y + 2),
+               cv2.FONT_HERSHEY_SIMPLEX, font_scale, (0, 0, 0), thickness + 2, cv2.LINE_AA)
+    cv2.putText(frame, label_text, (label_x, label_y),
+               cv2.FONT_HERSHEY_SIMPLEX, font_scale, color, thickness, cv2.LINE_AA)
 
 
 # ============================================================
@@ -465,7 +566,8 @@ class VideoProcessor:
         setting_path: str = "config/handflow_setting.yaml",
         minimal_mode: bool = False,
         enable_aruco: bool = True,
-        enable_macropad: bool = True
+        enable_macropad: bool = True,
+        ignored_gestures: List[str] = None
     ):
         self.minimal_mode = minimal_mode
         self.enable_aruco = enable_aruco
@@ -525,11 +627,21 @@ class VideoProcessor:
         self.right_predictions = deque(maxlen=5)
         self.left_predictions = deque(maxlen=5)
 
+        # Minimum confidence threshold for gesture recognition
+        self.min_confidence_threshold = 0.7
+
+        # Gestures to ignore (won't be displayed even if detected)
+        self.ignored_gestures = set(ignored_gestures) if ignored_gestures else set()
+
         # Current gestures
         self.current_gestures = {"Right": ("none", 0.0), "Left": ("none", 0.0)}
 
+        # Prediction throttling - only predict every N frames for performance
+        self.predict_every_n_frames = 2
+        self._frame_counter = 0
+
         # Gesture display timing (show for N frames after detection)
-        self.gesture_display_frames = 25  # Show gesture label for ~1.25 seconds at 20fps
+        self.gesture_display_frames = 35  # Show gesture label for ~1.75 seconds at 20fps
         self.gesture_display_counters = {"Right": 0, "Left": 0}
         self.last_displayed_gesture = {"Right": "none", "Left": "none"}
 
@@ -561,11 +673,11 @@ class VideoProcessor:
 
         print(f"Loaded model: {model_path}")
         print(f"Gesture classes: {self.gesture_classes}")
+        if self.ignored_gestures:
+            print(f"Ignored gestures: {list(self.ignored_gestures)}")
 
     def _load_model(self, model_path: str):
         """Load TFLite model."""
-        import tensorflow as tf
-
         if not os.path.exists(model_path):
             print(f"Warning: Model not found at {model_path}")
             return
@@ -618,12 +730,19 @@ class VideoProcessor:
                 best_gesture = g
                 best_conf = avg_conf
 
+        # Apply confidence threshold - reject low confidence predictions
+        if best_conf < self.min_confidence_threshold:
+            return "none", best_conf
+
         return best_gesture, best_conf
 
     def process_frame(self, frame: np.ndarray, frame_num: int = 0) -> Tuple[np.ndarray, Dict]:
         """Process a single frame and return annotated frame."""
         h, w = frame.shape[:2]
         output = frame.copy()
+
+        # Increment frame counter for prediction throttling
+        self._frame_counter += 1
 
         # Reset finger tracking
         self.current_finger_pos = None
@@ -694,30 +813,32 @@ class VideoProcessor:
                     if len(self.right_sequence) > self.sequence_length:
                         self.right_sequence.pop(0)
 
-                    # Predict if sequence is full
+                    # Predict if sequence is full (throttled for performance)
                     if len(self.right_sequence) == self.sequence_length:
-                        seq_array = np.array(self.right_sequence)  # (seq_len, 84)
-                        # Feature engineering on entire sequence
-                        features = self.feature_engineer.transform(seq_array)
-                        gesture, conf = self._predict_gesture(features)
-                        gesture, conf = self._get_smoothed_prediction(
-                            self.right_predictions, gesture, conf
-                        )
-                        self.current_gestures["Right"] = (gesture, conf)
+                        if self._frame_counter % self.predict_every_n_frames == 0:
+                            seq_array = np.array(self.right_sequence)  # (seq_len, 84)
+                            # Feature engineering on entire sequence
+                            features = self.feature_engineer.transform(seq_array)
+                            gesture, conf = self._predict_gesture(features)
+                            gesture, conf = self._get_smoothed_prediction(
+                                self.right_predictions, gesture, conf
+                            )
+                            self.current_gestures["Right"] = (gesture, conf)
                 else:
                     self.left_sequence.append(landmarks_np)
                     if len(self.left_sequence) > self.sequence_length:
                         self.left_sequence.pop(0)
 
                     if len(self.left_sequence) == self.sequence_length:
-                        seq_array = np.array(self.left_sequence)  # (seq_len, 84)
-                        # Feature engineering on entire sequence
-                        features = self.feature_engineer.transform(seq_array)
-                        gesture, conf = self._predict_gesture(features)
-                        gesture, conf = self._get_smoothed_prediction(
-                            self.left_predictions, gesture, conf
-                        )
-                        self.current_gestures["Left"] = (gesture, conf)
+                        if self._frame_counter % self.predict_every_n_frames == 0:
+                            seq_array = np.array(self.left_sequence)  # (seq_len, 84)
+                            # Feature engineering on entire sequence
+                            features = self.feature_engineer.transform(seq_array)
+                            gesture, conf = self._predict_gesture(features)
+                            gesture, conf = self._get_smoothed_prediction(
+                                self.left_predictions, gesture, conf
+                            )
+                            self.current_gestures["Left"] = (gesture, conf)
 
                 # Get current gesture for this hand
                 gesture, conf = self.current_gestures[handedness]
@@ -746,6 +867,10 @@ class VideoProcessor:
                         # Use cached finger_in_screen state
                         if not self._finger_in_screen_area:
                             display_gesture = "none"
+
+                # Filter out ignored gestures
+                if display_gesture in self.ignored_gestures:
+                    display_gesture = "none"
 
                 # Manage gesture display timing
                 # Reset counter when a new non-none gesture is detected
@@ -809,7 +934,9 @@ def process_video(
     minimal_mode: bool = False,
     show_preview: bool = False,
     enable_aruco: bool = True,
-    enable_macropad: bool = True
+    enable_macropad: bool = True,
+    export_skeleton: bool = False,
+    ignored_gestures: List[str] = None
 ):
     """
     Process a video file with full HandFlow detection pipeline.
@@ -855,6 +982,18 @@ def process_video(
         cap.release()
         sys.exit(1)
 
+    # Initialize skeleton video writer if requested
+    skeleton_out = None
+    skeleton_path = None
+    if export_skeleton:
+        skeleton_path = str(Path(output_path).with_stem(Path(output_path).stem + "_skeleton"))
+        skeleton_out = cv2.VideoWriter(skeleton_path, fourcc, fps, (width, height))
+        if skeleton_out.isOpened():
+            print(f"Skeleton: {skeleton_path}")
+        else:
+            print("Warning: Could not create skeleton video")
+            skeleton_out = None
+
     # Initialize processor
     processor = VideoProcessor(
         model_path=model_path,
@@ -862,7 +1001,8 @@ def process_video(
         setting_path=setting_path,
         minimal_mode=minimal_mode,
         enable_aruco=enable_aruco,
-        enable_macropad=enable_macropad
+        enable_macropad=enable_macropad,
+        ignored_gestures=ignored_gestures
     )
 
     # Process frames
@@ -895,6 +1035,16 @@ def process_video(
             # Write frame
             out.write(output)
 
+            # Write skeleton frame if enabled
+            if skeleton_out is not None:
+                skeleton_frame = draw_skeleton_frame(
+                    frame.shape,
+                    detections,
+                    processor.gesture_display_counters,
+                    processor.last_displayed_gesture
+                )
+                skeleton_out.write(skeleton_frame)
+
             # Preview
             if show_preview:
                 preview = cv2.resize(output, (960, 540))
@@ -917,6 +1067,8 @@ def process_video(
     finally:
         cap.release()
         out.release()
+        if skeleton_out is not None:
+            skeleton_out.release()
         processor.close()
         if show_preview:
             cv2.destroyAllWindows()
@@ -926,6 +1078,8 @@ def process_video(
     print(f"Done!")
     print(f"Processed {frame_num} frames in {elapsed:.1f}s ({frame_num/elapsed:.1f} FPS)")
     print(f"Output: {output_path}")
+    if skeleton_path:
+        print(f"Skeleton: {skeleton_path}")
     print(f"{'='*50}")
 
 
@@ -958,6 +1112,10 @@ Examples:
                        help="Disable ArUco screen detection")
     parser.add_argument("--no-macropad", action="store_true",
                        help="Disable MacroPad detection")
+    parser.add_argument("--skeleton", action="store_true",
+                       help="Export additional skeleton-only video (black background)")
+    parser.add_argument("--ignore-gestures", nargs="+", default=[],
+                       help="List of gestures to ignore (e.g., --ignore-gestures pinch swipe)")
 
     args = parser.parse_args()
 
@@ -970,7 +1128,9 @@ Examples:
         minimal_mode=args.minimal,
         show_preview=args.preview,
         enable_aruco=not args.no_aruco,
-        enable_macropad=not args.no_macropad
+        enable_macropad=not args.no_macropad,
+        export_skeleton=args.skeleton,
+        ignored_gestures=args.ignore_gestures
     )
 
 

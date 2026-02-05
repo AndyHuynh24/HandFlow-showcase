@@ -160,6 +160,18 @@ class ArUcoScreenDetector:
         # "partial_2" = 2 markers + 2 estimated, "grace" = using cached homography
         self._detection_mode: str = "none"
 
+        # Temporal smoothing for corner positions (reduces jitter)
+        # EMA smoothing factor: higher = more responsive, lower = smoother
+        # 0.75 is more responsive for fast head movements
+        self._smoothing_alpha: float = 0.75
+        self._smoothed_corners: Optional[np.ndarray] = None
+
+        # Outlier rejection - max allowed jump distance (pixels) between frames
+        # If a marker jumps more than this, it's likely a false positive
+        # Increased to 250 for fast head movements at lower resolutions
+        self._max_jump_distance: float = 250.0
+        self._last_marker_centers: Dict[int, np.ndarray] = {}  # marker_id -> last center
+
         # Side pairs for motion compensation
         # When one marker is blocked, use its pair on the same side
         self._side_pairs = {
@@ -184,6 +196,53 @@ class ArUcoScreenDetector:
             [1, 1],
             [0, 1]
         ], dtype=np.float32)
+
+    def _validate_quadrilateral(self, corners: np.ndarray) -> bool:
+        """
+        Validate that corners form a reasonable convex quadrilateral.
+
+        Rejects false positives from random text/noise detections by checking:
+        1. Minimum area (not degenerate)
+        2. Convexity (proper quadrilateral shape)
+        3. Aspect ratio within reasonable bounds
+
+        Args:
+            corners: 4 corner points (TL, TR, BR, BL)
+
+        Returns:
+            True if valid quadrilateral, False otherwise
+        """
+        if len(corners) != 4:
+            return False
+
+        # Check minimum area (at least 400 sq pixels to avoid tiny false positives)
+        # Reduced for smaller processing resolutions (480x270)
+        area = cv2.contourArea(corners)
+        if area < 400:
+            return False
+
+        # Check convexity
+        if not cv2.isContourConvex(corners):
+            return False
+
+        # Check aspect ratio is reasonable (0.2 to 5.0)
+        # Calculate bounding rect
+        x, y, w, h = cv2.boundingRect(corners)
+        if w == 0 or h == 0:
+            return False
+        aspect = w / h
+        if aspect < 0.2 or aspect > 5.0:
+            return False
+
+        # Check that no two adjacent corners are too close (degenerate edge)
+        # Reduced for smaller processing resolutions (480x270)
+        min_edge_length = 15  # pixels
+        for i in range(4):
+            edge_len = np.linalg.norm(corners[i] - corners[(i + 1) % 4])
+            if edge_len < min_edge_length:
+                return False
+
+        return True
 
     def load_calibration(self) -> bool:
         """Load calibration from config file."""
@@ -234,6 +293,16 @@ class ArUcoScreenDetector:
                     center = np.mean(marker_corners, axis=0)
                     # Marker width = distance between corner 0 and corner 1
                     width = np.linalg.norm(marker_corners[0] - marker_corners[1])
+
+                    # Outlier rejection: check if marker jumped too far from last position
+                    if marker_id in self._last_marker_centers:
+                        last_center = self._last_marker_centers[marker_id]
+                        jump_distance = np.linalg.norm(center - last_center)
+                        if jump_distance > self._max_jump_distance:
+                            # This detection is likely a false positive (text, noise, etc.)
+                            # Skip it and let the estimation logic handle this marker
+                            continue
+
                     marker_data[marker_id] = (center, width)
 
         detected_count = len(marker_data)
@@ -244,6 +313,8 @@ class ArUcoScreenDetector:
             # Update cache AFTER we have all 4 (no estimation needed)
             for marker_id, (center, _) in marker_data.items():
                 self._marker_cache[marker_id] = center.copy()
+                # Update last known centers for outlier rejection
+                self._last_marker_centers[marker_id] = center.copy()
 
         # Case 2: 3 markers detected - estimate 1 missing
         elif detected_count == 3 and len(self._marker_cache) == 4:
@@ -327,7 +398,31 @@ class ArUcoScreenDetector:
         # Apply calibration offsets to get actual screen corners
         screen_corners = self._apply_calibration_offsets(marker_data)
 
-        self._last_corners = np.array(screen_corners, dtype=np.float32)
+        raw_corners = np.array(screen_corners, dtype=np.float32)
+
+        # Validate that corners form a reasonable quadrilateral
+        if not self._validate_quadrilateral(raw_corners):
+            # Invalid shape - likely false positive detections
+            if self._detection_valid:
+                self._valid_grace_counter += 1
+                self._detection_mode = "grace"
+                if self._valid_grace_counter >= self._valid_grace_max:
+                    self._detection_valid = False
+                    self._detection_mode = "none"
+                    self._valid_grace_counter = 0
+            return self._detection_valid
+
+        # Apply temporal smoothing (EMA) to reduce jitter
+        if self._smoothed_corners is None:
+            self._smoothed_corners = raw_corners.copy()
+        else:
+            # Exponential moving average: new = alpha * raw + (1-alpha) * old
+            self._smoothed_corners = (
+                self._smoothing_alpha * raw_corners +
+                (1 - self._smoothing_alpha) * self._smoothed_corners
+            )
+
+        self._last_corners = self._smoothed_corners.copy()
 
         # Compute homography: camera corners -> normalized screen coords
         self._last_homography, _ = cv2.findHomography(
