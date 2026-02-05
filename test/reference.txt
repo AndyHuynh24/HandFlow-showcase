@@ -82,14 +82,14 @@ For this demo I use this to know what to do next
 def main():
     cap = cv2.VideoCapture(1)         
     while True:
-        ret, frame = cap.read()        # <-- BREAKPOINT 1
+        ret, frame = cap.read()        
         if not ret:
             break
 
-        # Draw rectangle                # <-- BREAKPOINT 2
+        # Draw rectangle                
         cv2.rectangle(frame, (100, 100), (650, 600), (0, 255, 0), 2)
 
-        # Draw text                     # <-- BREAKPOINT 3
+        # Draw text                    
         cv2.putText(frame, 'OpenCV Demo', (150, 300), cv2.FONT_HERSHEY_SIMPLEX, 2, (255, 255, 255), 2)
         
         cv2.imshow('frame', frame)

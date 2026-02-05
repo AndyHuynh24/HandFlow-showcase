@@ -1,4 +1,3 @@
-#!/usr/bin/env python3
 # Copyright (c) 2026 Huynh Huy. All rights reserved.
 
 """
@@ -12,7 +11,7 @@ using MacroPad buttons & handgesture for quick coding.
 import cv2
 import numpy as np
 
-def main():
+def main(): 
     cap = cv2.VideoCapture(1)
     while True:
         ret, frame = cap.read()
@@ -21,7 +20,7 @@ def main():
 
         #Draw rect
         cv2.rectangle(frame, (100, 100), (650, 600), (0, 255, 0), 2)
-        #                    top-left   bottom-right  color angleBGR  thickness
+        #                      top-left   bottom-right  color angleBGR  thickness
 
         #Draw text
         cv2.putText(frame, 'text', (150, 300), cv2.FONT_HERSHEY_SIMPLEX, 2, (255, 255, 255), 2)
@@ -33,5 +32,6 @@ def main():
     cap.release()
     cv2.destroyAllWindows()
     
+
 if __name__ == "__main__":
     main()
