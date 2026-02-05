@@ -18,7 +18,7 @@ import queue
 import numpy as np
 import customtkinter as ctk
 from PIL import Image
-from typing import Optional
+from typing import Optional, Tuple
 
 try:
     import mss
@@ -171,6 +171,9 @@ class DetectionWindow(ctk.CTkToplevel):
         self._overlay_cmd_activate: bool = False  # Activate hovered button on touch/touch_hold
         self._overlay_touch_processed: bool = False  # Track if current touch has been processed
         self._overlay_last_activation_time: float = 0.0  # Prevent double activation
+        # Auto-hide when finger not in overlay region (after markers detected)
+        self._overlay_no_hover_frames: int = 0  # Frames with no finger in region
+        self._overlay_no_hover_threshold: int = 5  # Hide after this many frames
 
         # Window setup (16:9 aspect ratio to match training data)
         self.title("HandFlow v2.0 - Detection Preview [H/V/S/D/C/O/R/Q]")
@@ -204,12 +207,18 @@ class DetectionWindow(ctk.CTkToplevel):
 
         # detection_mode: "balanced" or "motion_priority"
         self.macropad_manager = MacroPadManager(setting, executor, detection_mode="balanced")
-        
+
         # Initialize screen overlay macropad if enabled
         if self.setting.screen_overlay_macropad_enabled:
             from handflow.app.screen_overlay_macropad import ScreenOverlayMacroPad
             self._screen_overlay = ScreenOverlayMacroPad(setting, executor)
             self.logger.info("[Detection] Screen overlay macropad initialized")
+
+        # Paper macropad visual feedback overlay
+        from handflow.app.paper_macropad_feedback import PaperMacroPadFeedback
+        self._paper_feedback = PaperMacroPadFeedback()
+        self._paper_feedback_last_hover: Optional[int] = None
+        self._paper_feedback_last_activated: Optional[int] = None
 
         # State
         self._running = False
@@ -458,6 +467,10 @@ class DetectionWindow(ctk.CTkToplevel):
         if self._screen_overlay:
             self._screen_overlay.hide()
             self._screen_overlay.destroy()
+
+        # Clean up paper macropad feedback
+        if self._paper_feedback:
+            self._paper_feedback.destroy()
 
         # Re-enable macOS App Nap
         enable_app_nap()
@@ -737,6 +750,9 @@ class DetectionWindow(ctk.CTkToplevel):
                 if self._screen_overlay.is_visible():
                     self._screen_overlay.hide()
 
+        # Process paper macropad feedback (only when screen overlay is NOT visible)
+        self._process_paper_feedback()
+
         # Schedule next update (~24 FPS - sufficient for preview, saves CPU)
         if self._running:
             self.after(42, self._update_ui)
@@ -808,6 +824,92 @@ class DetectionWindow(ctk.CTkToplevel):
 
         self._screen_overlay.update()
 
+    def _process_paper_feedback(self):
+        """
+        Process paper macropad visual feedback (runs on main thread).
+
+        Shows hover/click feedback overlay for paper macropad interactions.
+        Only active when screen overlay is NOT visible.
+        """
+        # Skip if screen overlay is visible (it has its own feedback)
+        if self._screen_overlay and self._screen_overlay.is_visible():
+            # Hide paper feedback if it was showing
+            if self._paper_feedback_last_hover is not None:
+                self._paper_feedback.set_hovered_button(None)
+                self._paper_feedback_last_hover = None
+            return
+
+        # Skip if macropad not enabled or not detected
+        if not self.setting.macropad_enabled or not self.macropad_manager.is_detected():
+            if self._paper_feedback_last_hover is not None:
+                self._paper_feedback.set_hovered_button(None)
+                self._paper_feedback_last_hover = None
+            return
+
+        # Skip if screen overlay set is detected (ID 20)
+        detected_set = self.macropad_manager._detector.current_set_id
+        if detected_set == SCREEN_OVERLAY_SET_ID:
+            return
+
+        # Update button labels from active set
+        active_set = self.macropad_manager.active_set
+        if active_set:
+            labels = [
+                active_set.buttons.get(i).label if active_set.buttons.get(i) and active_set.buttons.get(i).label else f"Button {i+1}"
+                for i in range(12)
+            ]
+            self._paper_feedback.set_button_labels(labels)
+
+        # Check current hover state
+        current_hover = self.macropad_manager._hovered_button
+
+        # Update hover feedback if changed
+        if current_hover != self._paper_feedback_last_hover:
+            self._paper_feedback.set_hovered_button(current_hover)
+            self._paper_feedback_last_hover = current_hover
+
+        # Check for activation (button was successfully triggered)
+        activated = self.macropad_manager._activated_button
+        if activated is not None and activated != self._paper_feedback_last_activated:
+            self._paper_feedback.show_click_feedback(activated)
+            self._paper_feedback_last_activated = activated
+        elif activated is None:
+            self._paper_feedback_last_activated = None
+
+        # Process Tk events
+        self._paper_feedback.update()
+
+    def _is_point_in_expanded_region(self, point: Tuple[float, float], region: np.ndarray, margin_ratio: float = 0.25) -> bool:
+        """
+        Check if a point is within an expanded version of the detection region.
+
+        Args:
+            point: (x, y) point to check
+            region: 4 corners of the detection region [TL, TR, BR, BL]
+            margin_ratio: How much to expand (0.25 = expand by 25% of region size on each side)
+
+        Returns:
+            True if point is within the expanded region
+        """
+        if region is None or len(region) != 4:
+            return False
+
+        # Calculate region center
+        center = np.mean(region, axis=0)
+
+        # Expand each corner outward from center
+        expanded = []
+        for corner in region:
+            direction = corner - center
+            expanded_corner = corner + direction * margin_ratio
+            expanded.append(expanded_corner)
+
+        expanded_region = np.array(expanded, dtype=np.float32)
+
+        # Check if point is inside expanded polygon
+        result = cv2.pointPolygonTest(expanded_region, point, False)
+        return result >= 0
+
     def _handle_screen_overlay(self, current_gesture: str):
         """
         Handle screen overlay show/hide based on gesture.
@@ -825,13 +927,19 @@ class DetectionWindow(ctk.CTkToplevel):
         detected_set = self.macropad_manager._detector.current_set_id if is_detected else None
         mp_hovered = self.macropad_manager._hovered_button
 
-        # Check if finger is hovering over paper macropad (set IDs 12, 13, 14)
-        # Only suppress screen overlay if finger is WITHIN the paper macropad region
-        finger_over_paper_macropad = (
-            is_detected and
-            detected_set in (12, 13, 14) and
-            mp_hovered is not None  # Finger is actually over a button
-        )
+        # Check if finger is near paper macropad region (set IDs 12, 13, 14)
+        # Use expanded region (with margin) to suppress screen overlay even when
+        # finger is near but not exactly over a button (e.g., due to projection angle)
+        finger_over_paper_macropad = False
+        if is_detected and detected_set in (12, 13, 14):
+            finger_pos = self.macropad_manager._finger_pos
+            detection = self.macropad_manager._detector.detection
+            if finger_pos and detection is not None:
+                # Check if finger is within expanded region (original + ~1 marker size margin)
+                # margin_ratio=0.25 expands by 25% on each side, roughly 1 marker size
+                finger_over_paper_macropad = self._is_point_in_expanded_region(
+                    finger_pos, detection.detection_region, margin_ratio=0.25
+                )
 
         # Get hovered button only if screen overlay is detected
         hovered_btn = None
@@ -849,13 +957,37 @@ class DetectionWindow(ctk.CTkToplevel):
                     self._overlay_cmd_show = True
                     self._overlay_cmd_activate = False
                     self._overlay_cmd_force_hide = False
+
+                    # Auto-hide check: if overlay is visible AND screen overlay markers detected
+                    # but finger is not over any button, count frames and hide after threshold
+                    if (self._screen_overlay and self._screen_overlay.is_visible() and
+                        is_detected and detected_set == SCREEN_OVERLAY_SET_ID):
+                        # Screen overlay markers are detected by camera
+                        if hovered_btn is None:
+                            # Finger not over any button - increment counter
+                            self._overlay_no_hover_frames += 1
+                            if self._overlay_no_hover_frames >= self._overlay_no_hover_threshold:
+                                # Hide overlay - finger not in region for too long
+                                print(f"[ScreenOverlay] Auto-hide: no finger in region for {self._overlay_no_hover_frames} frames")
+                                self._overlay_cmd_show = False
+                                self._overlay_cmd_force_hide = True
+                                self._overlay_no_hover_frames = 0
+                        else:
+                            # Finger is over a button - reset counter
+                            self._overlay_no_hover_frames = 0
+                    elif not (is_detected and detected_set == SCREEN_OVERLAY_SET_ID):
+                        # Markers not detected yet - don't count (camera still acquiring)
+                        pass
                 else:
                     # Finger is over paper macropad - don't show screen overlay
                     self._overlay_cmd_show = False
                     self._overlay_cmd_activate = False
                     self._overlay_cmd_force_hide = False
+                    self._overlay_no_hover_frames = 0  # Reset counter
 
             elif current_gesture in ('touch', 'touch_hold'):
+                # Reset no-hover counter on touch
+                self._overlay_no_hover_frames = 0
                 # Only activate screen overlay if finger is NOT over paper macropad
                 # AND we haven't already processed this touch
                 if not finger_over_paper_macropad and not self._overlay_touch_processed:
@@ -876,3 +1008,4 @@ class DetectionWindow(ctk.CTkToplevel):
                 self._overlay_cmd_show = False
                 self._overlay_cmd_activate = False
                 self._overlay_cmd_force_hide = False
+                self._overlay_no_hover_frames = 0  # Reset counter

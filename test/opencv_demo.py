@@ -25,7 +25,7 @@ def main():
         #                    top-left   bottom-right  color angleBGR  thickness
 
         #Draw text
-        cv2.putText(frame, 'OpenCV demo', (150, 300), cv2.FONT_HERSHEY_SIMPLEX, 2, (255, 255, 255), 2)
+        cv2.putText(frame, 'text', (150, 300), cv2.FONT_HERSHEY_SIMPLEX, 2, (255, 255, 255), 2)
         #                         bottom-left                      scale  color BGR    thickness
 
         cv2.imshow('frame', frame)
