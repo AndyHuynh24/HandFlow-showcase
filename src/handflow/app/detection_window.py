@@ -359,11 +359,7 @@ class DetectionWindow(ctk.CTkToplevel):
 
         fps = self._target_fps
         fourcc = cv2.VideoWriter_fourcc(*'mp4v')
-        writer = cv2.VideoWriter(self._recording_filename, fourcc, fps, (1280, 720))
-
-        if not writer.isOpened():
-            self.logger.error("[Recording] Failed to open video writer")
-            return
+        writer = None  # Initialize lazily with actual frame size
 
         frames_written = 0
 
@@ -371,6 +367,16 @@ class DetectionWindow(ctk.CTkToplevel):
             try:
                 # Block with timeout so we can check stop event
                 frame = self._recording_queue.get(timeout=0.1)
+
+                # Initialize writer with actual frame dimensions (full resolution)
+                if writer is None:
+                    h, w = frame.shape[:2]
+                    writer = cv2.VideoWriter(self._recording_filename, fourcc, fps, (w, h))
+                    if not writer.isOpened():
+                        self.logger.error(f"[Recording] Failed to open video writer at {w}x{h}")
+                        return
+                    self.logger.info(f"[Recording] Writer initialized at {w}x{h} (full resolution)")
+
                 writer.write(frame)
                 frames_written += 1
                 self._recording_frame_count = frames_written
@@ -806,9 +812,9 @@ class DetectionWindow(ctk.CTkToplevel):
                     # Hide overlay after activation and set cooldown
                     if self._overlay_cmd_force_hide:
                         self._screen_overlay.hide()
-                        self._screen_overlay.set_cooldown(1.0)  # 1 second cooldown before touch_hover can show again
+                        self._screen_overlay.set_cooldown(0.7)  # 0.7 second cooldown before touch_hover can show again
                         self._overlay_cmd_force_hide = False
-                        print(f"[ScreenOverlay] Hidden with 1.0s cooldown")
+                        print(f"[ScreenOverlay] Hidden with 0.7s cooldown")
 
                 elif self._overlay_cmd_activate and self._overlay_cmd_hovered_button is None:
                     print(f"[ScreenOverlay] Activation requested but no hovered button!")
@@ -932,6 +938,11 @@ class DetectionWindow(ctk.CTkToplevel):
         - touch / touch_hold: Activate if screen overlay detected, then hide
         - other: Hide overlay
         """
+        # During cooldown, completely ignore touch_hover and touch gestures
+        # This prevents any overlay interaction until cooldown expires
+        if self._screen_overlay.is_in_cooldown():
+            return
+
         # Check what's currently detected
         is_detected = self.macropad_manager.is_detected()
         detected_set = self.macropad_manager._detector.current_set_id if is_detected else None

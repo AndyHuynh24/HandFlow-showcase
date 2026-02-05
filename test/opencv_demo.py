@@ -3,6 +3,7 @@
 """
 OpenCV Drawing Demo - MacroPad Template Demo
 =============================================
+
 Simple OpenCV demo to demonstrate typing out code templates
 using MacroPad buttons & handgesture for quick coding.
 
@@ -31,7 +32,6 @@ def main():
             break
     cap.release()
     cv2.destroyAllWindows()
-    
 
 if __name__ == "__main__":
     main()
