@@ -1,7 +1,9 @@
-from pathlib import Path 
-from typing import Any 
+# Copyright (c) 2026 Huynh Huy. All rights reserved.
 
-import yaml 
+from pathlib import Path
+from typing import Any
+
+import yaml
 from pydantic import BaseModel, Field, field_validator
 
 class MediaPipeConfig(BaseModel): 

@@ -1,3 +1,5 @@
+# Copyright (c) 2026 Huynh Huy. All rights reserved.
+
 """
 HandFlow Detection Window
 ========================
@@ -9,16 +11,118 @@ Refactored to run UI on main thread (via customtkinter) to avoid macOS threading
 import cv2
 import time
 import threading
+import datetime
+import os
+import sys
+import queue
+import numpy as np
 import customtkinter as ctk
 from PIL import Image
 from typing import Optional
 
+try:
+    import mss
+    MSS_AVAILABLE = True
+except ImportError:
+    MSS_AVAILABLE = False
+
+try:
+    import pyautogui
+    PYAUTOGUI_AVAILABLE = True
+except ImportError:
+    PYAUTOGUI_AVAILABLE = False
+
+import numpy as np
+
 from handflow.utils import get_logger
+
+
+# ============================================================
+# macOS App Nap Prevention
+# ============================================================
+# When the app window loses focus, macOS throttles background
+# processes ("App Nap"), causing delayed gesture detection.
+# This uses multiple approaches to prevent throttling.
+
+_activity_token = None
+_caffeinate_process = None
+
+def disable_app_nap():
+    """Disable macOS App Nap using strongest available method."""
+    global _activity_token, _caffeinate_process
+    if sys.platform != 'darwin':
+        return
+
+    # Method 1: PyObjC with NSActivityLatencyCritical (strongest flag)
+    try:
+        from Foundation import NSProcessInfo
+        # NSActivityLatencyCritical = 0xFF00000000 (prevents App Nap completely)
+        # NSActivityUserInitiated = 0x00FFFFFF (user-initiated, high priority)
+        # Combined for maximum effect
+        NSActivityLatencyCritical = 0xFF00000000
+        NSActivityUserInitiated = 0x00FFFFFF
+        activity_options = NSActivityLatencyCritical | NSActivityUserInitiated
+
+        process_info = NSProcessInfo.processInfo()
+        _activity_token = process_info.beginActivityWithOptions_reason_(
+            activity_options,
+            "HandFlow real-time gesture detection"
+        )
+        print("[Detection] App Nap disabled (PyObjC NSActivityLatencyCritical)")
+        return  # Success, no need for fallback
+    except ImportError:
+        print("[Detection] PyObjC not available, trying caffeinate fallback...")
+    except Exception as e:
+        print(f"[Detection] PyObjC method failed: {e}, trying caffeinate fallback...")
+
+    # Method 2: Fallback to caffeinate command (reliable but spawns subprocess)
+    try:
+        import subprocess
+        # caffeinate -i: prevent idle sleep (keeps process active)
+        # We run it as a subprocess that we'll kill on cleanup
+        _caffeinate_process = subprocess.Popen(
+            ['caffeinate', '-i', '-w', str(os.getpid())],
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL
+        )
+        print("[Detection] App Nap disabled (caffeinate fallback)")
+    except Exception as e:
+        print(f"[Detection] WARNING: Could not disable App Nap: {e}")
+        print("[Detection] App may be less responsive when window is not focused")
+
+
+def enable_app_nap():
+    """Re-enable App Nap (cleanup)."""
+    global _activity_token, _caffeinate_process
+
+    if sys.platform != 'darwin':
+        return
+
+    # Clean up PyObjC activity token
+    if _activity_token is not None:
+        try:
+            from Foundation import NSProcessInfo
+            process_info = NSProcessInfo.processInfo()
+            process_info.endActivity_(_activity_token)
+            _activity_token = None
+        except:
+            pass
+
+    # Clean up caffeinate process
+    if _caffeinate_process is not None:
+        try:
+            _caffeinate_process.terminate()
+            _caffeinate_process.wait(timeout=1.0)
+            _caffeinate_process = None
+        except:
+            pass
 
 from handflow.utils import Setting
 
 from handflow.detector import GestureDetector, ArUcoScreenDetector, MacroPadManager
 from handflow.actions import ActionExecutor
+# Import constant directly to avoid per-frame import overhead
+SCREEN_OVERLAY_SET_ID = 20  # From screen_overlay_macropad module
 
 
 class DetectionWindow(ctk.CTkToplevel):
@@ -41,14 +145,35 @@ class DetectionWindow(ctk.CTkToplevel):
         # Debug toggles (can be toggled with keyboard) - must be defined before _update_status_label
         self._disable_drawing = True  # D key to toggle
         self._fps_cap_enabled = True  # C key to toggle
+        self._screen_overlay_debug = False  # O key to toggle - shows macropad detection info
+
+        # Recording state (R key to toggle) - simple queue-based
+        self._recording = False
+        self._recording_thread: Optional[threading.Thread] = None
+        self._recording_stop_event: Optional[threading.Event] = None
+        self._recording_start_time: Optional[float] = None
+        self._recording_frame_count = 0
+        self._recording_filename: Optional[str] = None
+        self._recording_queue: Optional[queue.Queue] = None  # Simple frame queue
+        self._recording_writer = None  # VideoWriter in main thread
 
         # Track last gesture for touch detection optimization
         self._last_gesture = "none"
         self._last_detections = {}
         self._finger_in_detected_area = False  # Track if finger is in ArUco/macropad area
+        
+        # Screen overlay macropad (just displays markers - detection via macropad_manager)
+        self._screen_overlay = None  # Optional[ScreenOverlayMacroPad]
+        self._overlay_cmd_lock = threading.Lock()
+        self._overlay_cmd_show: Optional[bool] = None  # True=show, False=hide
+        self._overlay_cmd_force_hide: bool = False
+        self._overlay_cmd_hovered_button: Optional[int] = None  # For hover visual feedback
+        self._overlay_cmd_activate: bool = False  # Activate hovered button on touch/touch_hold
+        self._overlay_touch_processed: bool = False  # Track if current touch has been processed
+        self._overlay_last_activation_time: float = 0.0  # Prevent double activation
 
         # Window setup (16:9 aspect ratio to match training data)
-        self.title("HandFlow v2.0 - Detection Preview [H=Flip H | V=Flip V | S=Swap | D=Draw | C=Cap | Q=Quit]")
+        self.title("HandFlow v2.0 - Detection Preview [H/V/S/D/C/O/R/Q]")
         self.geometry("1280x750")  # 720 + status bar
 
         # UI Elements
@@ -79,6 +204,12 @@ class DetectionWindow(ctk.CTkToplevel):
 
         # detection_mode: "balanced" or "motion_priority"
         self.macropad_manager = MacroPadManager(setting, executor, detection_mode="balanced")
+        
+        # Initialize screen overlay macropad if enabled
+        if self.setting.screen_overlay_macropad_enabled:
+            from handflow.app.screen_overlay_macropad import ScreenOverlayMacroPad
+            self._screen_overlay = ScreenOverlayMacroPad(setting, executor)
+            self.logger.info("[Detection] Screen overlay macropad initialized")
 
         # State
         self._running = False
@@ -92,8 +223,8 @@ class DetectionWindow(ctk.CTkToplevel):
         config = load_config("config/config.yaml")
         self._target_fps = getattr(config.data, 'target_fps', 20.0)
         self._frame_duration = 1.0 / self._target_fps
-        self._gesture_model_interval = 2  # Run gesture TCN model every N frames
-        self._aruco_interval = 3  # Run ArUco/MacroPad every N frames
+        self._gesture_model_interval = 1  # Run gesture TCN model every frame (adaptive sampling handles data rate)
+        self._aruco_interval = 2  # Run ArUco/MacroPad every N frames
         self._frame_count = 0
         self._last_detection_results = None  # Cache detection results
 
@@ -119,6 +250,10 @@ class DetectionWindow(ctk.CTkToplevel):
         self.bind("<Key-D>", self._toggle_drawing)
         self.bind("<Key-c>", self._toggle_fps_cap)
         self.bind("<Key-C>", self._toggle_fps_cap)
+        self.bind("<Key-o>", self._toggle_screen_overlay_debug)
+        self.bind("<Key-O>", self._toggle_screen_overlay_debug)
+        self.bind("<Key-r>", self._toggle_recording)
+        self.bind("<Key-R>", self._toggle_recording)
         self.bind("<Key-q>", lambda e: self.stop())
         self.bind("<Key-Q>", lambda e: self.stop())
         self.bind("<Escape>", lambda e: self.stop())
@@ -157,6 +292,119 @@ class DetectionWindow(ctk.CTkToplevel):
         self._update_status_label()
         print(f"[Detection] Data Rate Limit: {'ON (20 FPS)' if self._fps_cap_enabled else 'OFF (unlimited)'}")
 
+    def _toggle_screen_overlay_debug(self, event=None):
+        """Toggle screen overlay macropad debug info."""
+        self._screen_overlay_debug = not self._screen_overlay_debug
+        self._update_status_label()
+        print(f"[Detection] Screen Overlay Debug: {'ON' if self._screen_overlay_debug else 'OFF'}")
+
+    def _toggle_recording(self, event=None):
+        """Toggle video recording (raw frames at full resolution)."""
+        if not self._recording:
+            self._start_recording()
+        else:
+            self._stop_recording()
+        self._update_status_label()
+
+    def _start_recording(self):
+        """Start recording - simple queue-based approach."""
+        recordings_dir = "recordings"
+        os.makedirs(recordings_dir, exist_ok=True)
+
+        timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
+        self._recording_filename = os.path.join(recordings_dir, f"camera_{timestamp}.mp4")
+
+        # Simple bounded queue - drops old frames if writer can't keep up
+        self._recording_queue = queue.Queue(maxsize=60)  # ~2 sec buffer at 30fps
+
+        self._recording_stop_event = threading.Event()
+        self._recording_start_time = time.time()
+        self._recording_frame_count = 0
+        self._recording = True
+
+        # Start recording thread
+        self._recording_thread = threading.Thread(target=self._recording_loop, daemon=True)
+        self._recording_thread.start()
+
+        fps = self._target_fps
+        self.logger.info(f"[Recording] Started: {self._recording_filename} @ {fps} FPS")
+        print(f"[Recording] Started: {self._recording_filename} @ {fps} FPS")
+
+    def _recording_loop(self):
+        """Recording thread - simple queue consumer with lower priority."""
+        # Set lower priority for recording thread (UTILITY class = background I/O)
+        if sys.platform == 'darwin':
+            try:
+                import ctypes
+                import ctypes.util
+                libpthread = ctypes.CDLL(ctypes.util.find_library('pthread'))
+                QOS_CLASS_UTILITY = 0x11  # Lower priority for background I/O
+                pthread_set_qos = libpthread.pthread_set_qos_class_self_np
+                pthread_set_qos.argtypes = [ctypes.c_uint, ctypes.c_int]
+                pthread_set_qos.restype = ctypes.c_int
+                pthread_set_qos(QOS_CLASS_UTILITY, 0)
+            except:
+                pass
+
+        fps = self._target_fps
+        fourcc = cv2.VideoWriter_fourcc(*'mp4v')
+        writer = cv2.VideoWriter(self._recording_filename, fourcc, fps, (1280, 720))
+
+        if not writer.isOpened():
+            self.logger.error("[Recording] Failed to open video writer")
+            return
+
+        frames_written = 0
+
+        while not self._recording_stop_event.is_set():
+            try:
+                # Block with timeout so we can check stop event
+                frame = self._recording_queue.get(timeout=0.1)
+                writer.write(frame)
+                frames_written += 1
+                self._recording_frame_count = frames_written
+            except queue.Empty:
+                continue
+
+        # Drain remaining frames
+        while not self._recording_queue.empty():
+            try:
+                frame = self._recording_queue.get_nowait()
+                writer.write(frame)
+                frames_written += 1
+                self._recording_frame_count = frames_written
+            except queue.Empty:
+                break
+
+        writer.release()
+        self.logger.info(f"[Recording] Thread done, wrote {frames_written} frames")
+
+    def _stop_recording(self):
+        """Stop recording thread."""
+        self._recording = False
+
+        if self._recording_stop_event:
+            self._recording_stop_event.set()
+
+        if self._recording_thread and self._recording_thread.is_alive():
+            self._recording_thread.join(timeout=3.0)
+
+        self._recording_thread = None
+        self._recording_stop_event = None
+        self._recording_queue = None
+
+        duration = time.time() - self._recording_start_time if self._recording_start_time else 0
+
+        self.logger.info(f"[Recording] Stopped after {duration:.1f}s")
+        print(f"\n[Recording] Saved: {self._recording_filename}")
+        print(f"  Frames: {self._recording_frame_count}")
+        print(f"  Duration: {duration:.1f} seconds")
+        if duration > 0:
+            print(f"  Actual FPS: {self._recording_frame_count / duration:.1f}")
+
+        self._recording_start_time = None
+        self._recording_frame_count = 0
+
     def _update_status_label(self):
         """Update status bar with current setting state."""
         h_flip = "ON" if self.setting.camera.flip_horizontal else "OFF"
@@ -164,13 +412,26 @@ class DetectionWindow(ctk.CTkToplevel):
         swap = "ON" if self.setting.camera.swap_hands else "OFF"
         draw = "OFF" if self._disable_drawing else "ON"
         cap = "ON" if self._fps_cap_enabled else "OFF"
-        self.status_label.configure(text=f"Flip H: {h_flip} | Flip V: {v_flip} | Swap: {swap} | Draw: {draw} | Cap: {cap} | Keys: H/V/S/D/C/Q")
+        overlay_dbg = "ON" if self._screen_overlay_debug else "OFF"
+        rec = "REC" if self._recording else "OFF"
+
+        status_text = f"H:{h_flip} V:{v_flip} Swap:{swap} Draw:{draw} Cap:{cap} OvlDbg:{overlay_dbg} Rec:{rec}"
+        self.status_label.configure(text=status_text)
+
+        # Visual indicator for recording
+        if self._recording:
+            self.status_label.configure(text_color="red")
+        else:
+            self.status_label.configure(text_color=("gray10", "gray90"))
 
     def start(self):
         """Start detection."""
         if self._running:
             return
-     
+
+        # Disable macOS App Nap for consistent background performance
+        disable_app_nap()
+
         self.logger.info("Starting detection window.")
         self._running = True
         self._thread = threading.Thread(target=self._capture_loop, daemon=True)
@@ -182,17 +443,49 @@ class DetectionWindow(ctk.CTkToplevel):
     def stop(self):
         """Stop detection and close window."""
         self._running = False
+
+        # Stop recording if active
+        if self._recording:
+            self._stop_recording()
+
         if self._thread:
             self._thread.join(timeout=1.0)
-        
+
         if self._cap:
             self._cap.release()
-            
+
+        # Clean up screen overlay
+        if self._screen_overlay:
+            self._screen_overlay.hide()
+            self._screen_overlay.destroy()
+
+        # Re-enable macOS App Nap
+        enable_app_nap()
+
         self.gesture_Detector.close()
         self.destroy()
         
     def _capture_loop(self):
         """Background thread for CV processing with optimized detection."""
+        # Boost thread priority for consistent timing even when backgrounded
+        if sys.platform == 'darwin':
+            try:
+                import ctypes
+                import ctypes.util
+                # Load libpthread for QoS setting
+                libpthread = ctypes.CDLL(ctypes.util.find_library('pthread'))
+                # pthread_set_qos_class_self_np(qos_class, relative_priority)
+                # QOS_CLASS_USER_INTERACTIVE = 0x21 (highest priority for UI responsiveness)
+                QOS_CLASS_USER_INTERACTIVE = 0x21
+                pthread_set_qos = libpthread.pthread_set_qos_class_self_np
+                pthread_set_qos.argtypes = [ctypes.c_uint, ctypes.c_int]
+                pthread_set_qos.restype = ctypes.c_int
+                result = pthread_set_qos(QOS_CLASS_USER_INTERACTIVE, 0)
+                if result == 0:
+                    print("[Detection] Thread QoS set to USER_INTERACTIVE (highest)")
+            except Exception as e:
+                print(f"[Detection] Could not set thread QoS: {e}")
+
         cam_idx = self.setting.camera.index
         consecutive_failures = 0
         max_failures = 30  # Stop after 30 consecutive frame read failures
@@ -205,6 +498,8 @@ class DetectionWindow(ctk.CTkToplevel):
             self._cap.set(cv2.CAP_PROP_FRAME_WIDTH, 1280)
             self._cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 720)
             self._cap.set(cv2.CAP_PROP_FPS, 30)
+            # Minimize buffer for lowest latency (1 frame = most recent)
+            self._cap.set(cv2.CAP_PROP_BUFFERSIZE, 1)
 
             if not self._cap.isOpened():
                 self.logger.error(f"[Detection] Error: Could not open camera {cam_idx}")
@@ -243,7 +538,13 @@ class DetectionWindow(ctk.CTkToplevel):
                     if self.setting.camera.flip_vertical:
                         frame = cv2.flip(frame, 0)
 
-                    h, w = frame.shape[:2]
+                    # Queue frame for recording (non-blocking, drops if full)
+                    if self._recording and self._recording_queue is not None:
+                        try:
+                            self._recording_queue.put_nowait(frame.copy())
+                        except queue.Full:
+                            pass  # Drop frame if queue full - keeps main loop fast
+
                     self._frame_count += 1
 
                     # Resize to MediaPipe input size (640x360) - used for both processing AND display
@@ -252,11 +553,8 @@ class DetectionWindow(ctk.CTkToplevel):
                     frame_small = cv2.resize(frame, (self._mp_width, self._mp_height), interpolation=cv2.INTER_NEAREST)
                     h_small, w_small = frame_small.shape[:2]
 
-                    # 2. ArUco/MacroPad Detection
-                    # Run every frame if finger is in detected area (for accurate interaction)
-                    # Otherwise run every N frames (markers are static, saves CPU)
+                    # 2. ArUco/MacroPad Detection - every 2 frames
                     run_aruco = (
-                        self._finger_in_detected_area or  # Every frame when finger is in area
                         (self._frame_count % self._aruco_interval == 0) or
                         (self._frame_count <= 1)
                     )
@@ -267,7 +565,16 @@ class DetectionWindow(ctk.CTkToplevel):
 
                         # MacroPad uses same markers - pass detected markers directly
                         if self.setting.macropad_enabled:
-                            self.macropad_manager.detect_markers(frame_small)
+                            # When screen overlay is visible, prioritize its detection
+                            # This prevents paper macropad markers from interfering
+                            screen_overlay_visible = (
+                                self._screen_overlay is not None and
+                                self._screen_overlay.is_visible()
+                            )
+                            self.macropad_manager.detect_markers(
+                                frame_small,
+                                prioritize_screen_overlay=screen_overlay_visible
+                            )
 
                     # 3. Check if finger is in detected area (ArUco screen or macropad)
                     # Used to run ArUco detection every frame when interacting
@@ -281,13 +588,18 @@ class DetectionWindow(ctk.CTkToplevel):
                         if self.aruco_detector.is_point_in_screen(pixel_tip):
                             self._finger_in_detected_area = True
 
-                        # Check macropad area
+                        # Check macropad area (paper or screen overlay)
                         if self.setting.macropad_enabled and self.macropad_manager.is_detected():
                             if self.macropad_manager._detector.is_point_in_region(pixel_tip):
                                 self._finger_in_detected_area = True
+                                macropad_active = True  # Finger is in macropad region
                             hovered = self.macropad_manager._detector.get_button_at_point(pixel_tip)
                             if hovered is not None:
                                 macropad_active = True
+
+                        # Also check if screen overlay is visible and active
+                        if self._screen_overlay and self._screen_overlay.is_visible():
+                            macropad_active = True  # Screen overlay handles touch
 
                     # 4. Tell gesture detector whether macropad is handling interaction
                     self.gesture_Detector.set_macropad_active(macropad_active)
@@ -309,12 +621,19 @@ class DetectionWindow(ctk.CTkToplevel):
 
                     # Track last gesture for touch optimization
                     self._last_detections = detections
+                    current_gesture = "none"
                     for hand in ['Right', 'Left']:
                         if hand in detections and 'gesture' in detections[hand]:
-                            self._last_gesture = detections[hand]['gesture']
+                            current_gesture = detections[hand]['gesture']
                             break
+                    self._last_gesture = current_gesture
 
-                    # 6. Draw debug overlays (ArUco and MacroPad) - skip if drawing disabled
+                    # 6. Screen Overlay MacroPad handling (if enabled)
+                    # Overlay displays markers, macropad_manager handles detection
+                    if self._screen_overlay is not None and self.setting.screen_overlay_macropad_enabled:
+                        self._handle_screen_overlay(current_gesture)
+                    
+                    # 7. Draw debug overlays (ArUco and MacroPad) - skip if drawing disabled
                     if not self._disable_drawing:
                         output = self.aruco_detector.draw_debug(output)
 
@@ -332,6 +651,32 @@ class DetectionWindow(ctk.CTkToplevel):
 
                         if not self._disable_drawing:
                             output = self.macropad_manager.draw_debug(output)
+
+                    # 8. Screen overlay debug info (press 'O' to toggle)
+                    if self._screen_overlay_debug and self._screen_overlay:
+                        overlay_visible = self._screen_overlay.is_visible()
+                        detected_set = self.macropad_manager._detector.current_set_id
+                        is_screen_set = detected_set == SCREEN_OVERLAY_SET_ID
+                        hovered_btn = self.macropad_manager._hovered_button
+
+                        # Draw debug text
+                        debug_y = 50
+                        color = (0, 255, 0) if is_screen_set else (0, 165, 255)
+                        cv2.putText(output, f"[ScreenOverlay Debug]", (10, debug_y),
+                                   cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 255, 255), 1)
+                        debug_y += 20
+                        cv2.putText(output, f"Overlay visible: {overlay_visible}", (10, debug_y),
+                                   cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 255, 255), 1)
+                        debug_y += 20
+                        cv2.putText(output, f"Detected set: {detected_set} (screen={SCREEN_OVERLAY_SET_ID})", (10, debug_y),
+                                   cv2.FONT_HERSHEY_SIMPLEX, 0.5, color, 1)
+                        debug_y += 20
+                        cv2.putText(output, f"MacroPad valid: {self.macropad_manager.is_detected()}", (10, debug_y),
+                                   cv2.FONT_HERSHEY_SIMPLEX, 0.5, color, 1)
+                        debug_y += 20
+                        hover_color = (0, 255, 0) if hovered_btn is not None else (128, 128, 128)
+                        cv2.putText(output, f"Hovered button: {hovered_btn}", (10, debug_y),
+                                   cv2.FONT_HERSHEY_SIMPLEX, 0.5, hover_color, 1)
 
                     # Update latest frame safely (small frame, will be scaled up by CTkImage)
                     with self._lock:
@@ -373,6 +718,151 @@ class DetectionWindow(ctk.CTkToplevel):
         except Exception as e:
             self.logger.error(f"[Detection] Error in UI update: {e}")
 
+        # Process screen overlay commands (must run on main thread)
+        if self._screen_overlay:
+            if self.setting.screen_overlay_macropad_enabled:
+                self._process_overlay_commands()
+            else:
+                # Hide overlay if setting was disabled
+                if self._screen_overlay.is_visible():
+                    self._screen_overlay.hide()
+
         # Schedule next update (~24 FPS - sufficient for preview, saves CPU)
         if self._running:
             self.after(42, self._update_ui)
+
+    def _process_overlay_commands(self):
+        """
+        Process overlay commands from background thread (runs on main thread).
+
+        The screen overlay ONLY displays markers - all detection is handled by
+        macropad_manager which sees the markers through the camera.
+        """
+        with self._overlay_cmd_lock:
+            if self._overlay_cmd_show is True:
+                if not self._screen_overlay.is_visible():
+                    if not self._screen_overlay.is_in_cooldown():
+                        self._screen_overlay.show()
+                else:
+                    self._screen_overlay.reset_hide_grace()
+
+                # Update hover visual on overlay (feedback from macropad_manager detection)
+                self._screen_overlay.set_hovered_button(self._overlay_cmd_hovered_button)
+
+                # Activate button on touch/touch_hold gesture
+                print(f"[ScreenOverlay] Checking activation: activate={self._overlay_cmd_activate}, hovered={self._overlay_cmd_hovered_button}")
+                if self._overlay_cmd_activate and self._overlay_cmd_hovered_button is not None:
+                    # Check time-based cooldown to prevent double activation
+                    current_time = time.time()
+                    if current_time - self._overlay_last_activation_time < 0.5:
+                        print(f"[ScreenOverlay] Skipping - too soon since last activation ({current_time - self._overlay_last_activation_time:.2f}s)")
+                        self._overlay_cmd_activate = False
+                    else:
+                        # Execute button action via macropad_manager
+                        # IMPORTANT: Force set ID to screen overlay (20) to ensure correct button set is used
+                        print(f"[ScreenOverlay] >>> ACTIVATING BUTTON {self._overlay_cmd_hovered_button} from SET {SCREEN_OVERLAY_SET_ID} <<<")
+                        self.macropad_manager._activate_button(
+                            self._overlay_cmd_hovered_button,
+                            force_set_id=SCREEN_OVERLAY_SET_ID
+                        )
+                        self._overlay_last_activation_time = current_time
+                        self.logger.info(f"[ScreenOverlay] Activated button {self._overlay_cmd_hovered_button} from set {SCREEN_OVERLAY_SET_ID}")
+                        self._overlay_cmd_activate = False
+
+                    # Hide overlay after activation and set cooldown
+                    if self._overlay_cmd_force_hide:
+                        self._screen_overlay.hide()
+                        self._screen_overlay.set_cooldown(1.0)  # 1 second cooldown before touch_hover can show again
+                        self._overlay_cmd_force_hide = False
+                        print(f"[ScreenOverlay] Hidden with 1.0s cooldown")
+
+                elif self._overlay_cmd_activate and self._overlay_cmd_hovered_button is None:
+                    print(f"[ScreenOverlay] Activation requested but no hovered button!")
+                    # Still hide and cooldown even if no button was hovered
+                    if self._overlay_cmd_force_hide:
+                        self._screen_overlay.hide()
+                        self._screen_overlay.set_cooldown(0.5)
+                        self._overlay_cmd_force_hide = False
+
+            elif self._overlay_cmd_show is False:
+                if self._screen_overlay.is_visible():
+                    if self._overlay_cmd_force_hide:
+                        self._screen_overlay.hide()
+                        self._screen_overlay.set_cooldown(0.7)
+                        self._overlay_cmd_force_hide = False
+                    else:
+                        self._screen_overlay.request_hide()
+
+            self._overlay_cmd_show = None
+            self._overlay_cmd_activate = False
+
+        self._screen_overlay.update()
+
+    def _handle_screen_overlay(self, current_gesture: str):
+        """
+        Handle screen overlay show/hide based on gesture.
+
+        The overlay ONLY displays ArUco markers - same as paper macropad.
+        Detection is handled by macropad_manager which sees the markers via camera.
+
+        Gestures:
+        - touch_hover: Show overlay (only if finger NOT hovering over paper macropad)
+        - touch / touch_hold: Activate if screen overlay detected, then hide
+        - other: Hide overlay
+        """
+        # Check what's currently detected
+        is_detected = self.macropad_manager.is_detected()
+        detected_set = self.macropad_manager._detector.current_set_id if is_detected else None
+        mp_hovered = self.macropad_manager._hovered_button
+
+        # Check if finger is hovering over paper macropad (set IDs 12, 13, 14)
+        # Only suppress screen overlay if finger is WITHIN the paper macropad region
+        finger_over_paper_macropad = (
+            is_detected and
+            detected_set in (12, 13, 14) and
+            mp_hovered is not None  # Finger is actually over a button
+        )
+
+        # Get hovered button only if screen overlay is detected
+        hovered_btn = None
+        if is_detected and detected_set == SCREEN_OVERLAY_SET_ID:
+            hovered_btn = mp_hovered
+
+        with self._overlay_cmd_lock:
+            self._overlay_cmd_hovered_button = hovered_btn
+
+            if current_gesture == 'touch_hover':
+                # Reset touch processed flag when not touching
+                self._overlay_touch_processed = False
+                # Only show overlay if finger is NOT over paper macropad
+                if not finger_over_paper_macropad:
+                    self._overlay_cmd_show = True
+                    self._overlay_cmd_activate = False
+                    self._overlay_cmd_force_hide = False
+                else:
+                    # Finger is over paper macropad - don't show screen overlay
+                    self._overlay_cmd_show = False
+                    self._overlay_cmd_activate = False
+                    self._overlay_cmd_force_hide = False
+
+            elif current_gesture in ('touch', 'touch_hold'):
+                # Only activate screen overlay if finger is NOT over paper macropad
+                # AND we haven't already processed this touch
+                if not finger_over_paper_macropad and not self._overlay_touch_processed:
+                    self._overlay_cmd_show = True
+                    self._overlay_cmd_activate = True
+                    self._overlay_cmd_force_hide = True
+                    self._overlay_touch_processed = True  # Mark as processed
+                    print(f"[ScreenOverlay] TOUCH detected! gesture={current_gesture}, hovered_btn={hovered_btn}")
+                elif finger_over_paper_macropad:
+                    # Finger is over paper macropad - don't show/activate screen overlay
+                    self._overlay_cmd_show = False
+                    self._overlay_cmd_activate = False
+                    self._overlay_cmd_force_hide = False
+
+            else:
+                # No relevant gesture - hide overlay and reset touch flag
+                self._overlay_touch_processed = False
+                self._overlay_cmd_show = False
+                self._overlay_cmd_activate = False
+                self._overlay_cmd_force_hide = False

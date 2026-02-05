@@ -1,4 +1,6 @@
 #!/usr/bin/env python
+# Copyright (c) 2026 Huynh Huy. All rights reserved.
+
 """
 Training Script
 ===============
@@ -7,12 +9,14 @@ Train unified gesture recognition model with experiment tracking.
 Uses flip canonicalization to train one model for both hands.
 
 Usage:
-    python scripts/train.py 
-    python scripts/train.py --architecture lstm --epochs 100 --config config/experiment.yaml 
+    python scripts/train.py
+    python scripts/train.py --architecture lstm --epochs 100
+    python scripts/train.py --resume models/hand_action.keras --epochs 50 --lr 0.00001
+    python scripts/train.py --resume models/checkpoints/tcn_best.h5 --lr 0.0001
 
 Pipeline:
 1. Load or preprocess data
-2. Build model architecture
+2. Build model architecture (or load existing model for resume)
 3. Create & and execute trainer
 """
 
@@ -26,6 +30,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
 
 import numpy as np
+from tensorflow import keras
 
 from handflow.data.loader import (
     check_processed_data_valid,
@@ -39,13 +44,27 @@ from handflow.utils.logging import setup_logging, get_logger
 
 def parse_args() -> argparse.Namespace:
     """Parse command line arguments."""
-    parser = argparse.ArgumentParser(description="Train HandFlow unified gesture model")
+    parser = argparse.ArgumentParser(
+        description="Train HandFlow unified gesture model",
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+        epilog="""
+Examples:
+    # Train from scratch
+    python scripts/train.py --architecture tcn --epochs 100
+
+    # Resume training from a checkpoint with lower learning rate
+    python scripts/train.py --resume models/hand_action.keras --epochs 50 --lr 0.00001
+
+    # Resume from a specific checkpoint
+    python scripts/train.py --resume models/checkpoints/tcn_20260203_best.h5 --lr 0.0001 --epochs 100
+        """
+    )
     parser.add_argument(
         "--architecture",
         type=str,
         default=None,
         choices=["lstm", "gru", "cnn1d", "transformer", "tcn"],
-        help="Model architecture (default: transformer)",
+        help="Model architecture (ignored if --resume is used)",
     )
     parser.add_argument(
         "--epochs",
@@ -58,6 +77,19 @@ def parse_args() -> argparse.Namespace:
         type=str,
         default=Path("config/config.yaml"),
         help="Path to config file",
+    )
+    parser.add_argument(
+        "--resume",
+        type=str,
+        default=None,
+        help="Path to model checkpoint to resume training from (.keras or .h5)",
+    )
+    parser.add_argument(
+        "--lr", "--learning-rate",
+        type=float,
+        default=None,
+        dest="learning_rate",
+        help="Starting learning rate (overrides config)",
     )
     return parser.parse_args()
 
@@ -128,22 +160,38 @@ def main() -> None:
     log_file = "logs/training.log"
     setup_logging(level="INFO", log_file=log_file)
     logger = get_logger("handflow.training")
-    
+
     # Load configuration
     config = load_config(args.config)
 
     # Override config with CLI arguments
-    if (args.architecture):
+    if args.architecture and not args.resume:
         config.model.architecture = args.architecture
-    if (args.epochs):
+    if args.epochs:
         config.training.epochs = args.epochs
+    if args.learning_rate:
+        config.training.learning_rate = args.learning_rate
+
+    # Check resume path exists
+    if args.resume:
+        resume_path = Path(args.resume)
+        if not resume_path.exists():
+            logger.error(f"Resume model not found: {args.resume}")
+            sys.exit(1)
+        logger.info(f"Will resume training from: {args.resume}")
 
     output_path = Path(config.model.output_dir) / "hand_action.keras"
 
     logger.info(f"{'='*60}")
-    logger.info(f"🖐️ HandFlow Training - Unified Model (Both Hands)")
+    if args.resume:
+        logger.info(f"🔄 HandFlow Training - RESUME MODE")
+    else:
+        logger.info(f"🖐️ HandFlow Training - Unified Model (Both Hands)")
     logger.info(f"{'='*60}")
-    logger.info(f"Architecture: {config.model.architecture.upper()}")
+    if args.resume:
+        logger.info(f"Resume from: {args.resume}")
+    else:
+        logger.info(f"Architecture: {config.model.architecture.upper()}")
     logger.info(f"Epochs: {config.training.epochs}")
     logger.info(f"Batch Size: {config.training.batch_size}")
     logger.info(f"Learning Rate: {config.training.learning_rate}")
@@ -165,11 +213,28 @@ def main() -> None:
     config.model.input_dim = x_train.shape[-1]
 
     # -------------------------------------------------
-    # 2. Build model
+    # 2. Build model (or load existing for resume)
     # -------------------------------------------------
-    logger.info(f"\n Building {config.model.architecture.upper()} model...")
-    model = build_model(config)
-    model.summary()
+    if args.resume:
+        logger.info(f"\n🔄 Loading model from {args.resume}...")
+        model = keras.models.load_model(args.resume)
+        logger.info("✅ Model loaded successfully")
+
+        # Always recompile with fresh optimizer when resuming
+        # (optimizer state from saved model is tied to old variable instances)
+        lr = config.training.learning_rate
+        logger.info(f"   Recompiling with learning rate: {lr}")
+        optimizer = keras.optimizers.Adam(learning_rate=lr)
+        model.compile(
+            optimizer=optimizer,
+            loss='categorical_crossentropy',
+            metrics=['accuracy']
+        )
+        model.summary()
+    else:
+        logger.info(f"\n🔨 Building {config.model.architecture.upper()} model...")
+        model = build_model(config)
+        model.summary()
 
     # -------------------------------------------------
     #3. Create trainer

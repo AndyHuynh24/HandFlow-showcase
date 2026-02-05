@@ -1,3 +1,5 @@
+# Copyright (c) 2026 Huynh Huy. All rights reserved.
+
 """
 User Calibration Module
 =======================
@@ -320,7 +322,8 @@ class UserCalibrator:
         """Train the calibration model."""
         callbacks = [
             keras.callbacks.EarlyStopping(
-                monitor="val_loss",
+                monitor="val_accuracy",
+                mode="max",
                 patience=self.config.early_stopping_patience,
                 restore_best_weights=True,
                 verbose=1

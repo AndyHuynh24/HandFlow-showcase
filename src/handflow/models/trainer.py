@@ -1,3 +1,5 @@
+# Copyright (c) 2026 Huynh Huy. All rights reserved.
+
 """
 HandFlow Model Trainer
 ======================
@@ -310,6 +312,12 @@ class Trainer:
         elif train_config.validation_split > 0:
             validation_data = None
 
+        # Determine if validation metrics will be available
+        # True if explicit validation data is provided OR validation_split is used
+        has_validation_data = (
+            validation_data is not None or train_config.validation_split > 0
+        )
+
         # Compute class weights if enabled
         class_weight = None
         if self.use_class_weights:
@@ -317,7 +325,7 @@ class Trainer:
             self.logger.info("Class weighting enabled for training")
 
         # Build callbacks
-        callbacks = self._build_callbacks(run_name)
+        callbacks = self._build_callbacks(run_name, has_validation_data)
 
         # Start experiment tracking run with full configuration
         run_config = self._build_run_config(x_train, x_val)
@@ -381,15 +389,31 @@ class Trainer:
 
         return self.history
 
-    def _build_callbacks(self, run_name: str) -> list[keras.callbacks.Callback]:
-        """Build training callbacks (early stopping, checkpointing, LR scheduling)."""
+    def _build_callbacks(
+        self, run_name: str, has_validation_data: bool
+    ) -> list[keras.callbacks.Callback]:
+        """Build training callbacks (early stopping, checkpointing, LR scheduling).
+
+        Args:
+            run_name: Name for checkpoint files.
+            has_validation_data: Whether validation data will be used during training.
+                This determines whether to monitor val_loss/val_accuracy or loss/accuracy.
+        """
         callbacks = []
         train_config = self.config.training
+
+        # Determine which metrics to monitor based on actual validation data availability
+        loss_metric = "val_loss" if has_validation_data else "loss"
+        acc_metric = "val_accuracy" if has_validation_data else "accuracy"
+
+        self.logger.info(f"Callbacks will monitor: {loss_metric} (loss), {acc_metric} (accuracy)")
+        self.logger.info(f"Early stopping patience: {train_config.early_stopping_patience} epochs")
 
         # Early stopping
         callbacks.append(
             keras.callbacks.EarlyStopping(
-                monitor="val_loss" if train_config.validation_split > 0 else "loss",
+                monitor=acc_metric,
+                mode="max",
                 patience=train_config.early_stopping_patience,
                 restore_best_weights=True,
                 verbose=1,
@@ -402,7 +426,7 @@ class Trainer:
         callbacks.append(
             keras.callbacks.ModelCheckpoint(
                 filepath=str(checkpoint_dir / f"{run_name}_best.h5"),
-                monitor="val_accuracy" if train_config.validation_split > 0 else "accuracy",
+                monitor=acc_metric,
                 mode="max",
                 save_best_only=True,
                 verbose=1,
@@ -413,7 +437,7 @@ class Trainer:
         if train_config.reduce_lr.enabled:
             callbacks.append(
                 keras.callbacks.ReduceLROnPlateau(
-                    monitor="val_loss" if train_config.validation_split > 0 else "loss",
+                    monitor=loss_metric,
                     factor=train_config.reduce_lr.factor,
                     patience=train_config.reduce_lr.patience,
                     min_lr=train_config.reduce_lr.min_lr,

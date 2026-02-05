@@ -1,3 +1,5 @@
+# Copyright (c) 2026 Huynh Huy. All rights reserved.
+
 """
 End-to-End Pipeline Benchmark
 =============================

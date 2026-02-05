@@ -1,3 +1,5 @@
+# Copyright (c) 2026 Huynh Huy. All rights reserved.
+
 """
 HandFlow Macro Pad Manager
 =========================
@@ -38,7 +40,7 @@ class MacroPadManager:
     """
     
     # Activation parameters
-    TOUCH_COOLDOWN = 0.5  # Seconds between activations of same button
+    TOUCH_COOLDOWN = 0.7  # Seconds between activations (global cooldown)
     DETECTION_GRACE_FRAMES = 10  # Keep detection valid for N frames after last successful detection
     HOVER_MEMORY_FRAMES = 5  # Remember hovered button for N frames
 
@@ -70,12 +72,14 @@ class MacroPadManager:
 
         # State
         self._last_activation_time: Dict[int, float] = {}
+        self._global_last_activation: float = 0.0  # Global cooldown tracker
         self._hovered_button: Optional[int] = None
         self._activated_button: Optional[int] = None
 
         # Finger state
         self._finger_pos: Optional[Tuple[float, float]] = None
         self._finger_touching = False
+        self._activation_this_frame = False  # Prevent double activation in same frame
 
         # Grace period tracking for robust detection
         self._frames_since_detection = 999  # Frames since last successful detection
@@ -98,13 +102,29 @@ class MacroPadManager:
         else:
             return None
 
+        # Check for screen overlay set (ID 20)
+        from handflow.app.screen_overlay_macropad import SCREEN_OVERLAY_SET_ID
+        if detected_id == SCREEN_OVERLAY_SET_ID:
+            return self.setting.get_screen_overlay_macropad()
+
+        # Check paper macropad sets
         for macro_set in self.setting.macropad_sets:
             if macro_set.set_marker_id == detected_id:
                 return macro_set
 
         return None
-    
-    def detect_markers(self, frame: np.ndarray) -> bool:
+
+    def _get_set_by_id(self, set_id: int):
+        """Get a macropad set by its marker ID."""
+        from handflow.app.screen_overlay_macropad import SCREEN_OVERLAY_SET_ID
+        if set_id == SCREEN_OVERLAY_SET_ID:
+            return self.setting.get_screen_overlay_macropad()
+        for macro_set in self.setting.macropad_sets:
+            if macro_set.set_marker_id == set_id:
+                return macro_set
+        return None
+
+    def detect_markers(self, frame: np.ndarray, prioritize_screen_overlay: bool = False) -> bool:
         """
         Detect macro pad markers in frame.
 
@@ -115,14 +135,29 @@ class MacroPadManager:
 
         Args:
             frame: BGR camera frame
+            prioritize_screen_overlay: If True, only look for screen overlay markers (ID 20)
+                                       This prevents paper macropad from interfering with screen overlay
 
         Returns:
             True if macro pad detected (or within grace period)
         """
-        # Dynamically get set IDs from settings (allows runtime changes)
-        known_set_ids = [s.set_marker_id for s in self.setting.macropad_sets]
-        if not known_set_ids:
-            known_set_ids = [12, 13, 14]  # Default fallback
+        # Reset frame-level activation lock
+        self._activation_this_frame = False
+        from handflow.app.screen_overlay_macropad import SCREEN_OVERLAY_SET_ID
+
+        if prioritize_screen_overlay:
+            # Only look for screen overlay when it's visible
+            # This prevents paper macropad markers from interfering
+            known_set_ids = [SCREEN_OVERLAY_SET_ID]
+        else:
+            # Dynamically get set IDs from settings (allows runtime changes)
+            known_set_ids = [s.set_marker_id for s in self.setting.macropad_sets]
+            if not known_set_ids:
+                known_set_ids = [12, 13, 14]  # Default fallback
+
+            # Also include screen overlay set ID (20) for screen-based macropad
+            if SCREEN_OVERLAY_SET_ID not in known_set_ids:
+                known_set_ids.append(SCREEN_OVERLAY_SET_ID)
 
         detected = self._detector.detect(frame, known_set_ids)
 
@@ -190,46 +225,70 @@ class MacroPadManager:
             self.logger.info(f"[MacroPad] Touch detected on button {effective_hover}!")
             self._activate_button(effective_hover)
     
-    def _activate_button(self, button_idx: int):
+    def _activate_button(self, button_idx: int, force_set_id: Optional[int] = None):
         """
         Activate a button - execute its bound action(s).
 
         Args:
-            button_idx: Button index (0-7)
+            button_idx: Button index (0-11)
+            force_set_id: If provided, use this set ID instead of detected set
+                          (used when screen overlay needs to ensure correct set)
         """
-        current_time = time.time()
+        print(f"[MacroPad] _activate_button called with button_idx={button_idx}, force_set_id={force_set_id}")
 
-        # Check cooldown
-        last_activation = self._last_activation_time.get(button_idx, 0)
-        if current_time - last_activation < self.TOUCH_COOLDOWN:
-            print(f"[MacroPad] Button {button_idx} on cooldown")
+        # Check frame-level lock (prevents double activation from paper + screen overlay)
+        if self._activation_this_frame:
+            print(f"[MacroPad] Already activated this frame, skipping")
             return
 
-        # Get button binding from active set
-        active_set = self.active_set
+        current_time = time.time()
+
+        # Check GLOBAL cooldown (prevents any button from firing too fast)
+        if current_time - self._global_last_activation < self.TOUCH_COOLDOWN:
+            remaining = self.TOUCH_COOLDOWN - (current_time - self._global_last_activation)
+            print(f"[MacroPad] Global cooldown active (wait {remaining:.2f}s)")
+            return
+
+        # Check per-button cooldown (extra safety)
+        last_activation = self._last_activation_time.get(button_idx, 0)
+        if current_time - last_activation < self.TOUCH_COOLDOWN:
+            print(f"[MacroPad] Button {button_idx} on cooldown (wait {self.TOUCH_COOLDOWN - (current_time - last_activation):.2f}s)")
+            return
+
+        # Get button binding from the appropriate set
+        if force_set_id is not None:
+            # Use forced set ID (for screen overlay)
+            active_set = self._get_set_by_id(force_set_id)
+            print(f"[MacroPad] Using forced set ID {force_set_id}: {active_set.name if active_set else 'NOT FOUND'}")
+        else:
+            # Use detected set
+            active_set = self.active_set
+
         if not active_set:
-            self.logger.info(f"[MacroPad] No active set found! Detected ID: {self._detector.current_set_id}")
-            self.logger.info(f"[MacroPad] Available sets: {[(s.name, s.set_marker_id) for s in self.setting.macropad_sets]}")
+            print(f"[MacroPad] ✗ No active set found! Detected ID: {self._detector.current_set_id}, Force ID: {force_set_id}")
+            print(f"[MacroPad]   Available sets: {[(s.name, s.set_marker_id) for s in self.setting.macropad_sets]}")
             return
 
         button = active_set.buttons.get(button_idx)
         if not button:
-            self.logger.info(f"[MacroPad] Button {button_idx} not configured")
+            print(f"[MacroPad] ✗ Button {button_idx} not configured in set '{active_set.name}'")
             return
-        
+
         # Get actions (supports both single action and multi-action)
         actions = button.get_actions()
         if not actions:
-            self.logger.info(f"[MacroPad] Button {button_idx} has no actions")
+            print(f"[MacroPad] ✗ Button {button_idx} has no actions")
             return
-        
+
         # Filter out "none" actions
         valid_actions = [a for a in actions if a.type != "none"]
         if not valid_actions:
-            self.logger.info(f"[MacroPad] Button {button_idx} has no valid actions")
+            print(f"[MacroPad] ✗ Button {button_idx} has no valid actions (all are 'none')")
             return
 
-        self.logger.info(f"[MacroPad] Executing button {button_idx}: {button.label} -> {len(valid_actions)} action(s)")
+        print(f"[MacroPad] Executing button {button_idx}: {button.label} -> {len(valid_actions)} action(s)")
+        for i, a in enumerate(valid_actions):
+            print(f"[MacroPad]   Action {i+1}: type='{a.type}', value='{a.value}'")
 
         # Execute action(s)
         if len(valid_actions) == 1:
@@ -241,7 +300,10 @@ class MacroPadManager:
 
         if result.success:
             self._activated_button = button_idx
+            self._activation_this_frame = True  # Prevent double activation
             self._last_activation_time[button_idx] = current_time
+            self._global_last_activation = current_time  # Update global cooldown
+            print(f"[MacroPad] ✓ SUCCESS: Button {button_idx} ({button.label or f'Button {button_idx + 1}'}) -> {len(valid_actions)} action(s)")
             self.logger.info(f"[MacroPad] Activated: {button.label or f'Button {button_idx + 1}'} -> {len(valid_actions)} action(s)")
 
             # Add to activation log for visual display
@@ -254,6 +316,7 @@ class MacroPadManager:
                 action_value=valid_actions[0].value if len(valid_actions) == 1 else ""
             ))
         else:
+            print(f"[MacroPad] ✗ FAILED: {result.message}")
             self.logger.info(f"[MacroPad] Action failed: {result.message}")
     
     def draw_debug(self, frame: np.ndarray) -> np.ndarray:
@@ -262,7 +325,7 @@ class MacroPadManager:
 
         Shows:
         - Detected markers with ID labels
-        - Detection region and 4x2 grid
+        - Detection region and 4x3 grid
         - Hover state (yellow highlight)
         - Activation state (green flash)
         - Finger position
@@ -287,34 +350,22 @@ class MacroPadManager:
         if self._frames_since_detection > 0 and self._frames_since_detection < self.DETECTION_GRACE_FRAMES:
             set_name = f"{set_name} (grace:{self.DETECTION_GRACE_FRAMES - self._frames_since_detection})"
 
+        # Get button names from active set (12 buttons, 0-11)
+        button_names = None
+        if active_set:
+            button_names = [
+                active_set.buttons.get(i, {}).label if hasattr(active_set.buttons.get(i), 'label') else None
+                for i in range(12)
+            ]
+
         output = self._detector.draw_debug(
             frame,
             finger_pos=self._finger_pos,
             hovered_button=effective_hover,
             activated_button=self._activated_button,
-            set_name=set_name
+            set_name=set_name,
+            button_names=button_names
         )
-
-        # Draw button labels if set is active (including during grace period)
-        if active_set and self._detector.detection:
-            for idx, cell in enumerate(self._detector.detection.grid_cells):
-                button = active_set.buttons.get(idx)
-                if button and button.label:
-                    center = np.mean(cell, axis=0).astype(int)
-
-                    # Determine color based on state
-                    if idx == self._activated_button:
-                        color = (0, 255, 0)
-                    elif idx == effective_hover:
-                        color = (0, 255, 255)
-                    else:
-                        color = (255, 255, 255)
-
-                    cv2.putText(
-                        output, button.label,
-                        (center[0] - 20, center[1] + 20),
-                        cv2.FONT_HERSHEY_SIMPLEX, 0.5, color, 1
-                    )
 
         # Draw finger position
         if self._finger_pos:

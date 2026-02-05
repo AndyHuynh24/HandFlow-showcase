@@ -35,15 +35,15 @@ model:
     - none
     - horizontal_swipe
     - swipeup
-    - thumb_left
-    - thumb_right
+    - thumb_index_swipe
+    - thumb_middle_swipe
     - 5_fingers_close
     - pointyclick
     - middleclick
     - touch_hover
     - touch_hold
     - touch
-  input_dim: 88
+  input_dim: 96
   hidden_units: 128
   num_layers: 2
   dropout: 0.1
@@ -60,9 +60,9 @@ training:
   reduce_lr:
     enabled: true
     factor: 0.5
-    patience: 5
+    patience: 8
     min_lr: 0.0000001
-  early_stopping_patience: 100
+  early_stopping_patience: 25
   validation_split: 0.15
   optimizer: "adam"
   loss: "categorical_crossentropy"

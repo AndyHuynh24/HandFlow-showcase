@@ -1,4 +1,6 @@
 #!/usr/bin/env python
+# Copyright (c) 2026 Huynh Huy. All rights reserved.
+
 """
 Data Preprocessing Script
 =========================
@@ -174,6 +176,7 @@ def preprocess_hand(
     logger.info(f"   Loaded {len(sequences)} sequences")
     logger.info(f"   Raw keypoints shape: {sequences.shape} (21 landmarks × 4 = 84 raw features)")
     logger.info(f"{'='* 60}")
+
 
     # -------------------------------------------------
     # 2. Validate data

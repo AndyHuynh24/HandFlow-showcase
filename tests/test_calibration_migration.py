@@ -1,3 +1,4 @@
+# Copyright (c) 2026 Huynh Huy. All rights reserved.
 
 import os
 import yaml

@@ -1,3 +1,5 @@
+# Copyright (c) 2026 Huynh Huy. All rights reserved.
+
 """
 HandFlow App - Main Application Window
 ======================================
@@ -420,9 +422,15 @@ class GestureMappingTab(ctk.CTkFrame):
         # Multi-line text box
         textbox = ctk.CTkTextbox(popup, width=400, height=120)
         textbox.pack(pady=5, padx=20)
-        
-        # Load existing text (convert \n back to actual newlines for display)
-        current_text = value_var.get().replace("\\n", "\n")
+
+        # Allow Tab key to insert actual tab character instead of changing focus
+        def insert_tab(event):
+            textbox.insert("insert", "\t")
+            return "break"  # Prevent default focus-change behavior
+        textbox.bind("<Tab>", insert_tab)
+
+        # Load existing text (convert \n and \t back to actual chars for display)
+        current_text = value_var.get().replace("\\n", "\n").replace("\\t", "\t")
         if current_text:
             textbox.insert("1.0", current_text)
         textbox.focus_set()
@@ -479,31 +487,34 @@ class MacroPadTab(ctk.CTkFrame):
         self._build_ui()
 
     def _build_ui(self):
+        # Track if editing screen overlay vs paper macropad
+        self._editing_screen_overlay = False
+
         # Header with set selector
         header_frame = ctk.CTkFrame(self, fg_color="transparent")
         header_frame.pack(fill="x", padx=20, pady=(15, 5))
 
-        ctk.CTkLabel(
+        self.tab_title_label = ctk.CTkLabel(
             header_frame,
-            text="Paper Macro Pad",
+            text="Macro Pad",
             font=ctk.CTkFont(size=20, weight="bold")
-        ).pack(side="left")
+        )
+        self.tab_title_label.pack(side="left")
 
-        # Set selector
-        sets = self.setting.macropad_sets
-        set_names = [s.name for s in sets] if sets else ["Default"]
+        # Set selector - include both paper sets AND screen overlay (ID 20)
+        set_display_names = self._get_all_set_display_names()
 
-        self.set_var = ctk.StringVar(value=set_names[0] if set_names else "Default")
+        self.set_var = ctk.StringVar(value=set_display_names[0] if set_display_names else "Default")
         self.set_dropdown = ctk.CTkComboBox(
             header_frame,
-            values=set_names,
+            values=set_display_names,
             variable=self.set_var,
-            width=150,
+            width=220,
             command=self._on_set_changed
         )
         self.set_dropdown.pack(side="right", padx=5)
 
-        ctk.CTkLabel(header_frame, text="Active Set:").pack(side="right", padx=5)
+        ctk.CTkLabel(header_frame, text="Select Set:").pack(side="right", padx=5)
 
         # Description
         ctk.CTkLabel(
@@ -532,18 +543,29 @@ class MacroPadTab(ctk.CTkFrame):
             text_color="white"
         ).pack(side="left", pady=8)
 
+        # Show current set ID in header
+        current_set = self.setting.get_active_macropad()
+        set_id = current_set.set_marker_id if current_set else "?"
+        self.set_id_label = ctk.CTkLabel(
+            grid_header,
+            text=f"TL Marker ID: {set_id}  ",
+            font=ctk.CTkFont(size=11),
+            text_color="#aaccff"
+        )
+        self.set_id_label.pack(side="right", pady=8)
+
         # Scrollable button config area
         buttons_scroll = ctk.CTkScrollableFrame(left_panel, label_text="")
         buttons_scroll.pack(fill="both", expand=True, padx=5, pady=5)
 
-        # Create button configs in 2 columns
-        for row in range(4):
+        # Create button configs in 4 columns (3 rows x 4 cols = 12 buttons)
+        for row in range(3):
             row_frame = ctk.CTkFrame(buttons_scroll, fg_color="transparent")
             row_frame.pack(fill="x", pady=3)
 
-            for col in range(2):
-                # Button index 0-7 (matches settings and detector)
-                button_idx = row * 2 + col
+            for col in range(4):
+                # Button index 0-11 (matches settings and detector)
+                button_idx = row * 4 + col
                 self._create_button_config(row_frame, button_idx)
 
         # Right: Actions panel
@@ -640,7 +662,55 @@ class MacroPadTab(ctk.CTkFrame):
             text="Enable Macro Pad",
             variable=self.macropad_enabled_var,
             command=self._toggle_macropad
-        ).pack(pady=20)
+        ).pack(pady=(20, 10))
+
+        # Separator
+        ctk.CTkLabel(right_panel, text="", height=5).pack()
+
+        # Screen Overlay Section
+        overlay_header = ctk.CTkFrame(right_panel, fg_color="#1a5fb4", corner_radius=5)
+        overlay_header.pack(fill="x", padx=5, pady=(10, 5))
+
+        ctk.CTkLabel(
+            overlay_header,
+            text="  Screen Overlay",
+            font=ctk.CTkFont(size=12, weight="bold"),
+            text_color="white"
+        ).pack(side="left", pady=5)
+
+        # Screen Overlay Enable toggle
+        self.screen_overlay_var = ctk.BooleanVar(value=self.setting.screen_overlay_macropad_enabled)
+        screen_overlay_switch = ctk.CTkSwitch(
+            right_panel,
+            text="Enable Overlay",
+            variable=self.screen_overlay_var,
+            command=self._toggle_screen_overlay
+        )
+        screen_overlay_switch.pack(pady=5)
+
+        # Screen overlay info
+        ctk.CTkLabel(
+            right_panel,
+            text="Marker IDs: 20-27",
+            text_color="#4a9eff",
+            font=ctk.CTkFont(size=11, weight="bold")
+        ).pack(pady=(5, 0))
+
+        ctk.CTkLabel(
+            right_panel,
+            text="TL:20 TR:21 ML:22 MR:23\nBL:24 BR:25 BL2:26 BR2:27",
+            text_color="#888888",
+            font=ctk.CTkFont(size=9),
+            justify="center"
+        ).pack(pady=(2, 0))
+
+        ctk.CTkLabel(
+            right_panel,
+            text="Select '⬛ Screen Overlay'\nfrom dropdown to configure.\nCan use with paper macropad.",
+            text_color="gray",
+            font=ctk.CTkFont(size=10),
+            justify="center"
+        ).pack(pady=(5, 10))
 
     def _create_button_config(self, parent, button_idx: int):
         """Create configuration widget for a single button with multi-action support."""
@@ -984,9 +1054,15 @@ class MacroPadTab(ctk.CTkFrame):
         # Multi-line text box
         textbox = ctk.CTkTextbox(popup, width=400, height=120)
         textbox.pack(pady=5, padx=20)
-        
-        # Load existing text (convert \n back to actual newlines for display)
-        current_text = value_var.get().replace("\\n", "\n")
+
+        # Allow Tab key to insert actual tab character instead of changing focus
+        def insert_tab(event):
+            textbox.insert("insert", "\t")
+            return "break"  # Prevent default focus-change behavior
+        textbox.bind("<Tab>", insert_tab)
+
+        # Load existing text (convert \n and \t back to actual chars for display)
+        current_text = value_var.get().replace("\\n", "\n").replace("\\t", "\t")
         if current_text:
             textbox.insert("1.0", current_text)
         textbox.focus_set()
@@ -999,37 +1075,82 @@ class MacroPadTab(ctk.CTkFrame):
 
         ctk.CTkButton(popup, text="Save", width=100, command=save).pack(pady=15)
 
+    def _get_all_set_display_names(self) -> List[str]:
+        """Get display names for all sets including screen overlay."""
+        names = []
+        # Paper macropad sets
+        for s in self.setting.macropad_sets:
+            names.append(f"{s.name} (ID:{s.set_marker_id})")
+        # Screen overlay set (always at the end)
+        overlay_set = self.setting.get_screen_overlay_macropad()
+        names.append(f"⬛ {overlay_set.name} (ID:{overlay_set.set_marker_id})")
+        return names
+
+    def _get_current_editing_set(self):
+        """Get the currently selected set for editing (paper or screen overlay)."""
+        if self._editing_screen_overlay:
+            return self.setting.get_screen_overlay_macropad()
+        else:
+            return self.setting.get_active_macropad()
+
     def _on_set_changed(self, choice):
         """Handle set selection change."""
+        # Check if screen overlay was selected
+        overlay_set = self.setting.get_screen_overlay_macropad()
+        overlay_display = f"⬛ {overlay_set.name} (ID:{overlay_set.set_marker_id})"
+
+        if choice == overlay_display:
+            self._editing_screen_overlay = True
+            self._refresh_buttons()
+            return
+
+        # Otherwise, check paper macropad sets
+        self._editing_screen_overlay = False
         sets = self.setting.macropad_sets
         for i, s in enumerate(sets):
-            if s.name == choice:
+            display_name = f"{s.name} (ID:{s.set_marker_id})"
+            if display_name == choice:
                 self.setting.active_macropad_set = i
                 self._refresh_buttons()
                 break
 
     def _refresh_buttons(self):
         """Refresh button widgets with current set data."""
-        current_set = self.setting.get_active_macropad()
+        current_set = self._get_current_editing_set()
         if not current_set:
             return
 
+        # Update set ID label in header
+        if hasattr(self, 'set_id_label'):
+            marker_info = f"TL Marker ID: {current_set.set_marker_id}"
+            if self._editing_screen_overlay:
+                marker_info += " (Screen)"
+            self.set_id_label.configure(text=f"{marker_info}  ")
+
+        # Update title to indicate what we're editing
+        if hasattr(self, 'tab_title_label'):
+            if self._editing_screen_overlay:
+                self.tab_title_label.configure(text="Screen Overlay MacroPad")
+            else:
+                self.tab_title_label.configure(text="Paper Macro Pad")
+
         for button_idx, widgets in self.button_widgets.items():
             btn = current_set.buttons.get(button_idx)
+            # Clear existing
+            widgets['label'].delete(0, "end")
             if btn:
-                # Update label
-                widgets['label'].delete(0, "end")
                 if btn.label:
                     widgets['label'].insert(0, btn.label)
-                
-                # Update actions
                 actions = btn.get_actions()
                 widgets['actions'] = actions
                 widgets['actions_label'].configure(text=f"{len(actions)} action(s)")
+            else:
+                widgets['actions'] = []
+                widgets['actions_label'].configure(text="0 action(s)")
 
     def _save_config(self):
         """Save current macro pad configuration."""
-        current_set = self.setting.get_active_macropad()
+        current_set = self._get_current_editing_set()
         if not current_set:
             return
 
@@ -1104,6 +1225,7 @@ class MacroPadTab(ctk.CTkFrame):
         filepath = filedialog.asksaveasfilename(
             defaultextension=".pdf",
             filetypes=[("PDF files", "*.pdf")],
+            initialdir=os.path.expanduser("~/Desktop"),
             initialfile="macropad_origami.pdf"
         )
 
@@ -1167,17 +1289,293 @@ class MacroPadTab(ctk.CTkFrame):
             self._refresh_buttons()
 
     def _update_set_dropdown(self):
-        """Update set dropdown options."""
-        sets = self.setting.macropad_sets
-        set_names = [s.name for s in sets]
-        self.set_dropdown.configure(values=set_names)
-        if sets:
-            active_idx = min(self.setting.active_macropad_set, len(sets) - 1)
-            self.set_var.set(sets[active_idx].name)
+        """Update set dropdown options including screen overlay."""
+        set_display_names = self._get_all_set_display_names()
+        self.set_dropdown.configure(values=set_display_names)
+
+        if self._editing_screen_overlay:
+            # Keep screen overlay selected
+            overlay_set = self.setting.get_screen_overlay_macropad()
+            self.set_var.set(f"⬛ {overlay_set.name} (ID:{overlay_set.set_marker_id})")
+        elif self.setting.macropad_sets:
+            active_idx = min(self.setting.active_macropad_set, len(self.setting.macropad_sets) - 1)
+            active_set = self.setting.macropad_sets[active_idx]
+            self.set_var.set(f"{active_set.name} (ID:{active_set.set_marker_id})")
 
     def _toggle_macropad(self):
         """Toggle macro pad enabled state."""
         self.setting.macropad_enabled = self.macropad_enabled_var.get()
+    
+    def _toggle_screen_overlay(self):
+        """Toggle screen overlay macropad mode."""
+        self.setting.screen_overlay_macropad_enabled = self.screen_overlay_var.get()
+
+    def _open_screen_overlay_config(self):
+        """Open dialog to configure screen overlay macropad buttons."""
+        overlay_set = self.setting.get_screen_overlay_macropad()
+
+        popup = ctk.CTkToplevel(self)
+        popup.title("Screen Overlay MacroPad Configuration")
+        popup.geometry("750x600")
+        popup.transient(self.winfo_toplevel())
+        popup.grab_set()
+
+        # Header
+        header_frame = ctk.CTkFrame(popup, fg_color="#1a5fb4", corner_radius=5)
+        header_frame.pack(fill="x", padx=15, pady=(15, 5))
+
+        ctk.CTkLabel(
+            header_frame,
+            text="  Screen Overlay MacroPad (Set ID: 20)",
+            font=ctk.CTkFont(size=16, weight="bold"),
+            text_color="white"
+        ).pack(side="left", pady=10)
+
+        ctk.CTkLabel(
+            header_frame,
+            text="Markers: 20-27  ",
+            font=ctk.CTkFont(size=11),
+            text_color="#aaccff"
+        ).pack(side="right", pady=10)
+
+        ctk.CTkLabel(
+            popup,
+            text="Configure the 12 buttons for the screen overlay macropad. This is separate from paper macropad sets.",
+            text_color="gray",
+            font=ctk.CTkFont(size=11)
+        ).pack(pady=(5, 10))
+
+        # Scrollable button config area
+        buttons_scroll = ctk.CTkScrollableFrame(popup, label_text="")
+        buttons_scroll.pack(fill="both", expand=True, padx=15, pady=5)
+
+        # Store widgets for saving
+        overlay_button_widgets = {}
+
+        # Create button configs in 4 columns (3 rows x 4 cols = 12 buttons)
+        for row in range(3):
+            row_frame = ctk.CTkFrame(buttons_scroll, fg_color="transparent")
+            row_frame.pack(fill="x", pady=5)
+
+            for col in range(4):
+                button_idx = row * 4 + col
+                btn_frame = ctk.CTkFrame(row_frame, width=320)
+                btn_frame.pack(side="left", padx=10, pady=3)
+                btn_frame.pack_propagate(False)
+
+                # Get current button config
+                current_btn = overlay_set.buttons.get(button_idx)
+                current_label = current_btn.label if current_btn else ""
+                actions = current_btn.get_actions() if current_btn else []
+
+                # Header with button number
+                btn_header = ctk.CTkFrame(btn_frame, height=28)
+                btn_header.pack(fill="x", padx=5, pady=(5, 2))
+
+                ctk.CTkLabel(
+                    btn_header,
+                    text=f"Button {button_idx + 1}",
+                    font=ctk.CTkFont(size=12, weight="bold")
+                ).pack(side="left")
+
+                ctk.CTkLabel(
+                    btn_header,
+                    text=f"idx {button_idx}",
+                    font=ctk.CTkFont(size=10),
+                    text_color="#4a9eff"
+                ).pack(side="right")
+
+                # Label entry
+                label_entry = ctk.CTkEntry(
+                    btn_frame,
+                    placeholder_text="Button Label",
+                    width=200,
+                    height=28,
+                    font=ctk.CTkFont(size=11)
+                )
+                label_entry.pack(padx=5, pady=3)
+                if current_label:
+                    label_entry.insert(0, current_label)
+
+                # Actions info and edit button
+                action_row = ctk.CTkFrame(btn_frame, fg_color="transparent")
+                action_row.pack(fill="x", padx=5, pady=3)
+
+                actions_label = ctk.CTkLabel(
+                    action_row,
+                    text=f"{len(actions)} action(s)",
+                    font=ctk.CTkFont(size=10),
+                    text_color="gray"
+                )
+                actions_label.pack(side="left")
+
+                # Store actions list
+                overlay_button_widgets[button_idx] = {
+                    'label': label_entry,
+                    'actions_label': actions_label,
+                    'actions': list(actions)
+                }
+
+                # Edit actions button
+                edit_btn = ctk.CTkButton(
+                    action_row,
+                    text="Edit Actions",
+                    width=100,
+                    height=26,
+                    font=ctk.CTkFont(size=10),
+                    command=lambda idx=button_idx: self._edit_overlay_button_actions(
+                        idx, overlay_button_widgets, popup
+                    )
+                )
+                edit_btn.pack(side="right")
+
+        # Save/Cancel buttons
+        btn_frame = ctk.CTkFrame(popup, fg_color="transparent")
+        btn_frame.pack(pady=15)
+
+        def save_overlay_config():
+            """Save screen overlay macropad configuration."""
+            for button_idx, widgets in overlay_button_widgets.items():
+                label = widgets['label'].get()
+                actions = widgets['actions']
+
+                overlay_set.buttons[button_idx] = MacroPadButton(
+                    label=label,
+                    actions=actions
+                )
+
+            save_setting(self.setting, DEFAULT_SETTING_PATH)
+            messagebox.showinfo("Saved", "Screen overlay macropad configuration saved!")
+            popup.destroy()
+
+        ctk.CTkButton(btn_frame, text="Cancel", width=100, command=popup.destroy).pack(side="left", padx=10)
+        ctk.CTkButton(btn_frame, text="Save", width=120, command=save_overlay_config).pack(side="left", padx=10)
+
+    def _edit_overlay_button_actions(self, button_idx: int, widgets_dict: dict, parent_popup):
+        """Edit actions for a screen overlay button."""
+        popup = ctk.CTkToplevel(parent_popup)
+        popup.title(f"Screen Overlay Button {button_idx + 1} Actions")
+        popup.geometry("650x480")
+        popup.transient(parent_popup)
+        popup.grab_set()
+
+        # Header
+        ctk.CTkLabel(
+            popup,
+            text=f"Actions for Button {button_idx + 1}",
+            font=ctk.CTkFont(size=16, weight="bold")
+        ).pack(pady=(15, 5))
+
+        ctk.CTkLabel(
+            popup,
+            text="Add multiple actions that execute in sequence.",
+            text_color="gray",
+            font=ctk.CTkFont(size=11)
+        ).pack(pady=(0, 10))
+
+        # Scrollable actions area
+        actions_scroll = ctk.CTkScrollableFrame(popup, label_text="", height=250)
+        actions_scroll.pack(fill="both", expand=True, padx=15, pady=5)
+
+        dialog_action_rows = []
+        type_to_name = {a[1]: a[0] for a in ActionExecutor.get_available_actions()}
+
+        def add_action_row(action=None):
+            if len(dialog_action_rows) >= 10:
+                messagebox.showwarning("Limit", "Maximum 10 actions per button.")
+                return
+
+            row_index = len(dialog_action_rows)
+            row_frame = ctk.CTkFrame(actions_scroll, fg_color="transparent")
+            row_frame.pack(fill="x", pady=3)
+
+            ctk.CTkLabel(row_frame, text=f"{row_index + 1}.", width=25, font=ctk.CTkFont(size=11)).pack(side="left")
+
+            current_type = action.type if action else "none"
+            current_name = type_to_name.get(current_type, "None")
+
+            action_var = ctk.StringVar(value=current_name)
+            dropdown = ctk.CTkComboBox(
+                row_frame, values=self.action_names, variable=action_var,
+                width=130, height=28, font=ctk.CTkFont(size=10)
+            )
+            dropdown.pack(side="left", padx=3)
+
+            current_value = action.value if action else ""
+            value_var = ctk.StringVar(value=current_value)
+            value_entry = ctk.CTkEntry(
+                row_frame, textvariable=value_var, placeholder_text="Value...",
+                width=130, height=28, font=ctk.CTkFont(size=10)
+            )
+            value_entry.pack(side="left", padx=3)
+
+            current_delay = action.delay if action else 0.17
+            delay_var = ctk.StringVar(value=str(current_delay))
+            ctk.CTkLabel(row_frame, text="Delay:", font=ctk.CTkFont(size=9)).pack(side="left", padx=(5, 2))
+            delay_entry = ctk.CTkEntry(row_frame, textvariable=delay_var, width=45, height=28, font=ctk.CTkFont(size=10))
+            delay_entry.pack(side="left")
+            ctk.CTkLabel(row_frame, text="s", font=ctk.CTkFont(size=9)).pack(side="left")
+
+            cfg_btn = ctk.CTkButton(
+                row_frame, text="...", width=28, height=28,
+                command=lambda: self._configure_dialog_action(action_var, value_var)
+            )
+            cfg_btn.pack(side="left", padx=3)
+
+            def remove_row(rf=row_frame):
+                for i, rd in enumerate(dialog_action_rows):
+                    if rd['frame'] == rf:
+                        rf.destroy()
+                        dialog_action_rows.pop(i)
+                        break
+                for i, rd in enumerate(dialog_action_rows):
+                    for child in rd['frame'].winfo_children():
+                        if isinstance(child, ctk.CTkLabel) and child.cget("text").endswith("."):
+                            child.configure(text=f"{i + 1}.")
+                            break
+
+            delete_btn = ctk.CTkButton(
+                row_frame, text="✕", width=28, height=28,
+                fg_color="#a51d2d", hover_color="#8a1829", command=remove_row
+            )
+            delete_btn.pack(side="left", padx=2)
+
+            dialog_action_rows.append({
+                'frame': row_frame, 'action_var': action_var,
+                'value_var': value_var, 'delay_var': delay_var
+            })
+
+        # Load existing actions
+        existing_actions = widgets_dict[button_idx]['actions']
+        if existing_actions:
+            for action in existing_actions:
+                add_action_row(action)
+        else:
+            add_action_row()
+
+        ctk.CTkButton(popup, text="+ Add Action", width=120, height=30, command=lambda: add_action_row()).pack(pady=10)
+
+        btn_frame = ctk.CTkFrame(popup, fg_color="transparent")
+        btn_frame.pack(pady=15)
+
+        def save_actions():
+            actions = []
+            for row_data in dialog_action_rows:
+                action_name = row_data['action_var'].get()
+                action_type = self.action_types.get(action_name, 'none')
+                value = row_data['value_var'].get()
+                try:
+                    delay = float(row_data['delay_var'].get())
+                except ValueError:
+                    delay = 0.17
+                actions.append(ActionBinding(type=action_type, value=value, delay=delay))
+
+            widgets_dict[button_idx]['actions'] = actions
+            widgets_dict[button_idx]['actions_label'].configure(text=f"{len(actions)} action(s)")
+            popup.destroy()
+
+        ctk.CTkButton(btn_frame, text="Cancel", width=80, command=popup.destroy).pack(side="left", padx=5)
+        ctk.CTkButton(btn_frame, text="Save", width=100, command=save_actions).pack(side="left", padx=5)
 
 
 class CalibrationTab(ctk.CTkFrame):

@@ -1,9 +1,11 @@
+# Copyright (c) 2026 Huynh Huy. All rights reserved.
+
 """
 HandFlow Origami MacroPad PDF Generator
 =======================================
 
-Generates a foldable A4 PDF with 3 macropad sets for origami-style stand.
-Each set has 8 markers and a 4x2 button grid with circle indicators.
+Generates a foldable A4 PDF with 2 macropad sets for origami-style stand.
+Each set has 8 markers and a 4x3 button grid with circle indicators.
 
 Marker Layout (8 markers):
     [TL: Set ID]              [TR: ID 4]
@@ -22,7 +24,7 @@ Layout:
 - Portrait A4
 - 1.8cm top margin
 - 2.5cm left/right margins
-- 3 equal sections for 3 sets
+- 2 equal sections for 2 sets
 - Each section: markers region + 1.8cm info margin
 - Fold guide lines between sections and on margins
 """
@@ -54,19 +56,19 @@ class MacroPadSetInfo:
     """Info for a macropad set to print."""
     name: str
     set_marker_id: int
-    button_labels: List[str]  # 8 labels for buttons 0-7
+    button_labels: List[str]  # 12 labels for buttons 0-11
 
 
 class OrigamiMacroPadPDFGenerator:
     """
-    Generate origami-foldable A4 PDF with 3 macropad sets.
+    Generate origami-foldable A4 PDF with 2 macropad sets.
 
     Features:
     - 8 corner markers per set (TL=set ID, others constant 4-10)
     - BL2/BR2 provide fallback detection when BL/BR are occluded
-    - 4x2 button grid with 70% circle indicators
+    - 4x3 button grid with 70% circle indicators (12 buttons per set)
     - Fold guide lines
-    - Bottom section info flipped for origami folding
+    - Square buttons for better usability
     """
     
     # A4 dimensions
@@ -82,7 +84,7 @@ class OrigamiMacroPadPDFGenerator:
     
     # Grid layout
     GRID_COLS = 4
-    GRID_ROWS = 2
+    GRID_ROWS = 3
     CIRCLE_RATIO = 0.7  # Circle diameter as fraction of cell size
 
     # Fold line offset: move fold guides into margin (away from content/markers)
@@ -104,46 +106,46 @@ class OrigamiMacroPadPDFGenerator:
         output_path: str
     ) -> str:
         """
-        Generate PDF with up to 3 macropad sets.
-        
+        Generate PDF with up to 2 macropad sets (one per page section).
+
         Args:
-            sets: List of MacroPadSetInfo (max 3)
+            sets: List of MacroPadSetInfo (max 2)
             output_path: Path to save PDF
-            
+
         Returns:
             Path to generated PDF
         """
-        if len(sets) > 3:
-            sets = sets[:3]
-        while len(sets) < 3:
+        if len(sets) > 2:
+            sets = sets[:2]
+        while len(sets) < 2:
             # Pad with empty sets if needed
             sets.append(MacroPadSetInfo(
                 name=f"Set {len(sets) + 1}",
                 set_marker_id=12 + len(sets),
-                button_labels=[f"Button {i+1}" for i in range(8)]
+                button_labels=[f"Button {i+1}" for i in range(12)]
             ))
-        
+
         c = canvas.Canvas(output_path, pagesize=A4)
-        
+
         # Calculate section dimensions
         page_width_mm = 210
         page_height_mm = 297
-        
+
         top_margin = self.TOP_MARGIN_MM * mm
         side_margin = self.SIDE_MARGIN_MM * mm
         info_margin = self.INFO_MARGIN_MM * mm
-        
-        # Available height for all 3 sections
+
+        # Available height for 2 sections (larger sections for square buttons)
         available_height = self.PAGE_HEIGHT - top_margin
-        section_height = available_height / 3
-        
+        section_height = available_height / 2
+
         # Content area within margins
         content_width = self.PAGE_WIDTH - 2 * side_margin
-        
+
         # Draw each section
         for idx, set_info in enumerate(sets):
             section_top = self.PAGE_HEIGHT - top_margin - idx * section_height
-            
+
             self._draw_section(
                 c, set_info,
                 x=side_margin,
@@ -153,20 +155,20 @@ class OrigamiMacroPadPDFGenerator:
                 info_margin=info_margin,
                 flip_info=False  # No flipping for any section
             )
-            
+
             # Draw fold guide line between sections (except after last)
             # Offset into margin region (away from markers/content)
-            if idx < 2:
+            if idx < 1:
                 fold_offset = self.FOLD_LINE_OFFSET_MM * mm
                 fold_y = section_top - section_height
                 self._draw_fold_line(c, 0, fold_y, self.PAGE_WIDTH)
-        
+
         # Draw fold guides on margins (except info margin)
         self._draw_margin_fold_guides(c, top_margin, side_margin, section_height)
-        
+
         c.save()
         self._cleanup_temp_files()
-        
+
         print(f"[PDF] Origami macropad generated: {output_path}")
         return output_path
     
@@ -215,21 +217,28 @@ class OrigamiMacroPadPDFGenerator:
         height: float
     ):
         """
-        Draw 8 markers and 4x2 button grid.
+        Draw 8 markers and 4x3 button grid with square buttons.
 
         Marker layout:
             [TL: Set ID]              [TR: ID 4]
                    |                       |
             [ML: ID 5]                [MR: ID 6]
                    |                       |
-            [BL2: ID 9]              [BR2: ID 10]  
+            [BL2: ID 9]              [BR2: ID 10]
                    | 0 gap                 | 0 gap
-                   [BL: ID 7]    [BR: ID 8]  <- inner bottom markers (1 markresize on each side shift inside)
+                   [BL: ID 7]    [BR: ID 8]  <- inner bottom markers
 
         BL2 and BR2 provide fallback bottom corners when BL/BR are occluded.
         """
-        # Simple marker size: 1/5 of section height
-        marker_size = height / 5
+        # Calculate marker size for square buttons in 4x3 grid
+        # For square buttons: grid_width/4 = grid_height/3
+        # With grid_width = width - 2*M and grid_height = 4*M (height = 5*M)
+        # Solving: (width - 2*M)/4 = 4*M/3 => M = 3*width/22
+        marker_size = (3 * width) / 22
+
+        # Ensure minimum marker size for detection
+        min_marker_size = 15 * mm
+        marker_size = max(marker_size, min_marker_size)
 
         # Gap for visual border drawing only (borders stop before reaching markers)
         # This does NOT affect the detection area - just the printed borders
@@ -239,12 +248,12 @@ class OrigamiMacroPadPDFGenerator:
         left_x = x
         right_x = x + width - marker_size
 
-        # Distribute markers evenly across height
+        # Distribute markers evenly across height (height = 5 * marker_size)
         # TL/TR at top, ML/MR in middle, BL2/BR2 below middle, BL/BR at bottom
         top_y = y + height - marker_size
         mid_y = top_y - marker_size * 1.5
         bottom2_y = mid_y - marker_size * 1.5  # BL2/BR2 directly under ML/MR
-        bottom_y = bottom2_y - marker_size 
+        bottom_y = bottom2_y - marker_size
 
         # Position map: (position_name, marker_id, x, y)
         positions = [
@@ -252,8 +261,8 @@ class OrigamiMacroPadPDFGenerator:
             ('TR', 4, right_x, top_y),
             ('ML', 5, left_x, mid_y),
             ('MR', 6, right_x, mid_y),
-            ('BL2', 9, left_x, bottom2_y),           # NEW: directly under ML
-            ('BR2', 10, right_x, bottom2_y),         # NEW: directly under MR
+            ('BL2', 9, left_x, bottom2_y),           # directly under ML
+            ('BR2', 10, right_x, bottom2_y),         # directly under MR
             ('BL', 7, left_x + marker_size, bottom_y),  # inner bottom left
             ('BR', 8, right_x - marker_size, bottom_y), # inner bottom right
         ]
@@ -261,14 +270,15 @@ class OrigamiMacroPadPDFGenerator:
         # Draw markers
         for pos_name, marker_id, mx, my in positions:
             self._draw_marker(c, marker_id, mx, my, marker_size)
-        
-        # Grid region: FULL width between markers (edge to edge for accurate detection)
-        grid_x = left_x + marker_size  # Starts right at marker edge
-        grid_y = y + marker_size
-        grid_width = right_x - grid_x  # Full width to right marker edge
-        grid_height = height - marker_size
-        
-        # Draw 4x2 grid with buttons
+
+        # Grid region: matches detection region (from TL's inner corner to BL2/BR2's outer corner)
+        # Detection region: TL's top-right to BR2's bottom-left
+        grid_x = left_x + marker_size  # Starts at TL's right edge
+        grid_y = bottom2_y  # Starts at BL2's bottom edge (detection region bottom)
+        grid_width = right_x - grid_x  # Full width to TR's left edge
+        grid_height = (top_y + marker_size) - bottom2_y  # From BL2 bottom to TL top
+
+        # Draw 4x3 grid with buttons
         # Pass border_gap so borders don't touch markers visually
         self._draw_button_grid(c, set_info.button_labels, grid_x, grid_y, grid_width, grid_height, border_gap, marker_size)
     
@@ -306,8 +316,8 @@ class OrigamiMacroPadPDFGenerator:
         marker_size: float = 0
     ):
         """
-        Draw 4x2 button grid with circles and labels.
-        
+        Draw 4x3 button grid with circles and labels.
+
         Borders have gaps near the left/right edges so they don't touch markers.
         """
         cell_width = width / self.GRID_COLS
@@ -364,15 +374,15 @@ class OrigamiMacroPadPDFGenerator:
                 c.setLineWidth(1)
                 c.circle(circle_x, circle_y, circle_diameter / 2, stroke=1, fill=0)
                 
-                # Button label inside circle
-                c.setFont("Helvetica-Bold", 8)
-                c.setFillColor(colors.black)
+                # # Button label inside circle
+                # c.setFont("Helvetica-Bold", 8)
+                # c.setFillColor(colors.black)
                 
-                # Truncate long labels
-                if len(label) > 10:
-                    label = label[:9] + ".."
+                # # Truncate long labels
+                # if len(label) > 10:
+                #     label = label[:9] + ".."
                 
-                c.drawCentredString(circle_x, circle_y - 3, label)
+                # c.drawCentredString(circle_x, circle_y - 3, label)
                 
                 # Button number (small, corner)
                 c.setFont("Helvetica", 5)
@@ -421,9 +431,9 @@ class OrigamiMacroPadPDFGenerator:
         text_y = y + height / 2
         
         # Set name
-        c.setFont("Helvetica-Bold", 12)
-        c.setFillColor(colors.black)
-        c.drawCentredString(center_x, text_y + 5, set_info.name)
+        # c.setFont("Helvetica-Bold", 12)
+        # c.setFillColor(colors.black)
+        # c.drawCentredString(center_x, text_y + 5, set_info.name)
         
         # Marker ID info
         c.setFont("Helvetica", 8)
@@ -477,22 +487,17 @@ class OrigamiMacroPadPDFGenerator:
 
 
 def create_default_sets() -> List[MacroPadSetInfo]:
-    """Create 3 default macropad sets."""
+    """Create 2 default macropad sets."""
     return [
         MacroPadSetInfo(
             name="Editing",
             set_marker_id=12,
-            button_labels=["Copy", "Paste", "Undo", "Redo", "Cut", "Save", "Select All", "Delete"]
+            button_labels=["Copy", "Paste", "Undo", "Redo", "Cut", "Save", "Select All", "Delete", "Find", "Replace", "New", "Open"]
         ),
         MacroPadSetInfo(
             name="Media",
             set_marker_id=13,
-            button_labels=["Play/Pause", "Stop", "Previous", "Next", "Vol -", "Vol +", "Mute", "Screenshot"]
-        ),
-        MacroPadSetInfo(
-            name="Coding",
-            set_marker_id=14,
-            button_labels=["Comment", "Format", "Run", "Debug", "Find", "Replace", "Terminal", "Git"]
+            button_labels=["Play/Pause", "Stop", "Previous", "Next", "Vol -", "Vol +", "Mute", "Screenshot", "Record", "Fullscreen", "Rewind", "Forward"]
         ),
     ]
 
@@ -509,9 +514,9 @@ def create_sets_from_settings(setting) -> List[MacroPadSetInfo]:
     """
     sets = []
     for macro_set in setting.macropad_sets:
-        # Extract labels from buttons (indices 0-7)
+        # Extract labels from buttons (indices 0-11)
         labels = []
-        for i in range(8):
+        for i in range(12):
             btn = macro_set.buttons.get(i)
             if btn and btn.label:
                 labels.append(btn.label)

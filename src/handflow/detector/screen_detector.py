@@ -1,3 +1,5 @@
+# Copyright (c) 2026 Huynh Huy. All rights reserved.
+
 """
 ArUco Marker-Based Screen Detection
 ===================================
@@ -151,7 +153,12 @@ class ArUcoScreenDetector:
         # Detection persistence - don't invalidate immediately on detection failure
         # This prevents jittering when detection fails briefly
         self._valid_grace_counter: int = 0
-        self._valid_grace_max: int = 3  # Keep valid for N failed detections before invalidating
+        self._valid_grace_max: int = 5  # Keep valid for N failed detections before invalidating
+
+        # Detection mode tracking for debug display
+        # "full" = 4 markers, "partial_3" = 3 markers + 1 estimated,
+        # "partial_2" = 2 markers + 2 estimated, "grace" = using cached homography
+        self._detection_mode: str = "none"
 
         # Side pairs for motion compensation
         # When one marker is blocked, use its pair on the same side
@@ -257,44 +264,61 @@ class ArUcoScreenDetector:
                 if marker_id in marker_data and marker_id not in missing_ids:
                     self._marker_cache[marker_id] = marker_data[marker_id][0].copy()
 
-        # # Case 3: 2 markers detected - estimate 2 missing
-        # elif detected_count == 2 and len(self._marker_cache) == 4:
-        #     # Find missing markers
-        #     missing_ids = [mid for mid in [0, 1, 2, 3] if mid not in marker_data]
+        # Case 3: 2 markers detected - estimate 2 missing using geometry + cache
+        elif detected_count == 2 and len(self._marker_cache) == 4:
+            # Find missing markers
+            missing_ids = [mid for mid in [0, 1, 2, 3] if mid not in marker_data]
 
-        #     if len(missing_ids) == 2:
-        #         # FIRST: Estimate both missing markers using OLD cache values
-        #         estimated_positions = self._estimate_missing_markers_2(missing_ids, marker_data)
-        #         avg_width = np.mean([w for _, w in marker_data.values()])
-        #         for mid, pos in estimated_positions.items():
-        #             marker_data[mid] = (pos, avg_width)
-        #             # Update cache for ESTIMATED markers too (for next frame's delta calculation)
-        #             self._marker_cache[mid] = pos.copy()
+            if len(missing_ids) == 2:
+                # Estimate both missing markers using motion transform + cache
+                estimated_positions = self._estimate_missing_markers_2(missing_ids, marker_data)
+                if len(estimated_positions) == 2:
+                    avg_width = np.mean([w for _, w in marker_data.values()])
+                    for mid, pos in estimated_positions.items():
+                        marker_data[mid] = (pos, avg_width)
+                        # Update cache for estimated markers
+                        self._marker_cache[mid] = pos.copy()
 
-        #     # THEN: Update cache for visible markers
-        #     for marker_id in [0, 1, 2, 3]:
-        #         if marker_id in marker_data and marker_id not in missing_ids:
-        #             self._marker_cache[marker_id] = marker_data[marker_id][0].copy()
+            # Update cache for visible markers
+            for marker_id in [0, 1, 2, 3]:
+                if marker_id in marker_data and marker_id not in missing_ids:
+                    self._marker_cache[marker_id] = marker_data[marker_id][0].copy()
 
         # Case 4: Less than 2 markers - can't estimate reliably
         # (need at least 2 visible markers for motion compensation)
 
         # Track which markers are estimated (for debug drawing)
         self._estimated_markers = set()
+        detected_ids = set(ids.flatten() if ids is not None else [])
         for mid in [0, 1, 2, 3]:
-            if mid in marker_data and mid not in [m for m in (ids.flatten() if ids is not None else [])]:
+            if mid in marker_data and mid not in detected_ids:
                 self._estimated_markers.add(mid)
+
+
+        # Determine detection mode based on actual vs estimated markers
+        num_estimated = len(self._estimated_markers)
+        if len(marker_data) == 4:
+            if num_estimated == 0:
+                self._detection_mode = "full"
+            elif num_estimated == 1:
+                self._detection_mode = "partial_3"
+            else:
+                self._detection_mode = "partial_2"
 
         # Need at least 4 markers (detected or estimated) to proceed
         if len(marker_data) < 4:
             # Use grace period - don't invalidate immediately
             if self._detection_valid:
                 self._valid_grace_counter += 1
+                self._detection_mode = "grace"
                 if self._valid_grace_counter >= self._valid_grace_max:
                     # Grace expired, actually invalidate
                     self._detection_valid = False
+                    self._detection_mode = "none"
                     self._valid_grace_counter = 0
                 # Keep using cached homography during grace period
+            else:
+                self._detection_mode = "none"
             return self._detection_valid
 
         # Average marker width for offset calculations
@@ -441,17 +465,31 @@ class ArUcoScreenDetector:
             H[:2, :] = A
             return H
 
-        # # -------------------------------
-        # # 2 points → Translation only
-        # # -------------------------------
-        # if len(src_pts) == 2:
-        #     delta = np.mean(dst_pts - src_pts, axis=0)
-        #     H = np.eye(3, dtype=np.float32)
-        #     H[0, 2] = delta[0]
-        #     H[1, 2] = delta[1]
-        #     return H
+        # -------------------------------
+        # 2 points → Similarity transform (translation + rotation + uniform scale)
+        # This is better than translation-only for camera movement
+        # -------------------------------
+        if len(src_pts) == 2:
+            # Try estimating a similarity transform (4 DOF: tx, ty, scale, rotation)
+            # This handles camera pan/tilt/zoom better than translation alone
+            try:
+                # Use estimateAffinePartial2D which estimates similarity transform
+                A, _ = cv2.estimateAffinePartial2D(src_pts, dst_pts)
+                if A is not None:
+                    H = np.eye(3, dtype=np.float32)
+                    H[:2, :] = A
+                    return H
+            except:
+                pass
 
-        # return None
+            # Fallback to translation only
+            delta = np.mean(dst_pts - src_pts, axis=0)
+            H = np.eye(3, dtype=np.float32)
+            H[0, 2] = delta[0]
+            H[1, 2] = delta[1]
+            return H
+
+        return None
 
 
     def transform_point(self, camera_point: Tuple[float, float]) -> Optional[Tuple[int, int]]:
@@ -510,6 +548,11 @@ class ArUcoScreenDetector:
         """Get the average marker width (for offset calculations)."""
         return self._last_marker_width
 
+    @property
+    def detection_mode(self) -> str:
+        """Get current detection mode: 'full', 'partial_3', 'partial_2', 'grace', or 'none'."""
+        return self._detection_mode
+
     def draw_debug(self, frame: np.ndarray, finger_pos: Optional[Tuple[float, float]] = None) -> np.ndarray:
         """
         Draw debug visualization on frame.
@@ -530,9 +573,31 @@ class ArUcoScreenDetector:
             cv2.aruco.drawDetectedMarkers(output, corners, ids)
 
         if self._detection_valid and self._last_corners is not None:
-            # Draw screen boundary
+            # Determine boundary color based on detection mode
+            # Green = full (4 markers), Yellow = partial_3, Orange = partial_2, Cyan = grace
+            mode_colors = {
+                "full": (0, 255, 0),       # Green - best quality
+                "partial_3": (0, 255, 255), # Yellow - good quality
+                "partial_2": (0, 165, 255), # Orange - acceptable
+                "grace": (255, 255, 0),     # Cyan - using cached
+            }
+            boundary_color = mode_colors.get(self._detection_mode, (0, 255, 0))
+
+            # Draw screen boundary with mode-appropriate color
             pts = self._last_corners.astype(np.int32).reshape((-1, 1, 2))
-            cv2.polylines(output, [pts], True, (0, 255, 0), 2)
+            cv2.polylines(output, [pts], True, boundary_color, 2)
+
+            # Draw detection mode indicator
+            mode_text = {
+                "full": "4/4 Full",
+                "partial_3": "3/4 Est",
+                "partial_2": "2/4 Est",
+                "grace": "Grace",
+            }
+            detected_now = len(ids) if ids is not None else 0
+            mode_label = mode_text.get(self._detection_mode, self._detection_mode)
+            cv2.putText(output, f"Mode: {mode_label} ({detected_now} visible)", (10, 30),
+                       cv2.FONT_HERSHEY_SIMPLEX, 0.4, boundary_color, 1)
 
             # Draw corner labels
             # Yellow = detected, Orange = estimated from cache
@@ -545,12 +610,12 @@ class ArUcoScreenDetector:
                 cv2.circle(output, tuple(corner.astype(int)), 5, color, -1)
                 label_text = f"{label}*" if is_estimated else label
                 cv2.putText(output, label_text, tuple((corner + [5, -5]).astype(int)),
-                           cv2.FONT_HERSHEY_SIMPLEX, 0.5, color, 1)
+                           cv2.FONT_HERSHEY_SIMPLEX, 0.4, color, 1)
 
             # Show occlusion status
             if self._estimated_markers:
-                cv2.putText(output, f"Occluded: {list(self._estimated_markers)}", (10, 60),
-                           cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 165, 255), 1)
+                cv2.putText(output, f"Estimated: {list(self._estimated_markers)}", (10, 50),
+                           cv2.FONT_HERSHEY_SIMPLEX, 0.4, (0, 165, 255), 1)
 
             # Draw finger position and screen mapping
             if finger_pos is not None:
@@ -562,12 +627,12 @@ class ArUcoScreenDetector:
                     in_bounds = self.is_point_in_screen(finger_pos)
                     color = (0, 255, 0) if in_bounds else (0, 0, 255)
                     cv2.putText(output, f"Screen: {screen_pos}", (fx + 10, fy),
-                               cv2.FONT_HERSHEY_SIMPLEX, 0.5, color, 1)
+                               cv2.FONT_HERSHEY_SIMPLEX, 0.4, color, 1)
         else:
-            # Detection status
+            # Detection status - not valid
             detected = len(ids) if ids is not None else 0
-            cv2.putText(output, f"Markers: {detected}/4", (10, 30),
-                       cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 0, 255), 2)
+            cv2.putText(output, f"Markers: {detected}/4 (need 2+)", (10, 30),
+                       cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 0, 255), 1)
 
         return output
 

@@ -1,7 +1,9 @@
-from pathlib import Path 
+# Copyright (c) 2026 Huynh Huy. All rights reserved.
+
+from pathlib import Path
 from typing import Optional
 
-import yaml 
+import yaml
 from pydantic import BaseModel, Field, field_validator
 
 class ActionBinding(BaseModel): 
@@ -34,10 +36,10 @@ class MacroPadSet(BaseModel):
     set_marker_id: int = 12  # Top-left marker ID that identifies this set
     buttons: dict[int, MacroPadButton] = {}
 
-    def model_post_init(self, __context): 
-        # Ensure all 8 buttons exist (index 0-7)
-        for button_idx in range(8): 
-            if button_idx not in self.buttons: 
+    def model_post_init(self, __context):
+        # Ensure all 12 buttons exist (index 0-11)
+        for button_idx in range(12):
+            if button_idx not in self.buttons:
                 self.buttons[button_idx] = MacroPadButton()
 
 class CameraSettings(BaseModel):
@@ -83,6 +85,13 @@ class Setting(BaseModel):
     # UI preferences
     theme: str = "dark"
     window_geometry: str = "1000x700"
+
+    # Screen overlay macropad mode (replaces cursor control when enabled)
+    screen_overlay_macropad_enabled: bool = False
+
+    # Dedicated screen overlay macropad set (uses marker IDs 20-27)
+    # This is separate from paper macropad sets and has its own button configuration
+    screen_overlay_macropad: Optional[MacroPadSet] = None
 
     # Convenience accessors
     def get_gesture_actions(self, gesture: str) -> list[ActionBinding]:
@@ -135,6 +144,15 @@ class Setting(BaseModel):
     def get_macropad_set_ids(self) -> list[int]:
         """Get all unique marker IDs from configured macropad sets."""
         return [s.set_marker_id for s in self.macropad_sets]
+
+    def get_screen_overlay_macropad(self) -> MacroPadSet:
+        """Get the screen overlay macropad set, creating it if it doesn't exist."""
+        if self.screen_overlay_macropad is None:
+            self.screen_overlay_macropad = MacroPadSet(
+                name="Screen Overlay",
+                set_marker_id=20  # Screen overlay uses ID 20
+            )
+        return self.screen_overlay_macropad
 
 
 def load_setting(setting_path: str | Path) -> Setting:

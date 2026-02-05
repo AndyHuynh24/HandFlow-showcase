@@ -1,4 +1,6 @@
 #!/usr/bin/env python
+# Copyright (c) 2026 Huynh Huy. All rights reserved.
+
 """
 Model Export Script
 ===================
@@ -6,7 +8,8 @@ Model Export Script
 Export trained Keras models to TFLite with quantization for fast inference.
 
 Usage:
-    python scripts/export.py --input models/hand_action.keras --output models/hand_action.tflite
+    
+    
     python scripts/export.py --input models/checkpoints/tcn_20260122_134840_best.h5 --output models/hand_action.tflite
 """
 

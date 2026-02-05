@@ -1,4 +1,6 @@
 #!/usr/bin/env python3
+# Copyright (c) 2026 Huynh Huy. All rights reserved.
+
 """
 HandFlow - Gesture & Macro Pad Control System
 =============================================

@@ -1,3 +1,5 @@
+# Copyright (c) 2026 Huynh Huy. All rights reserved.
+
 """
 HandFlow Action Executor
 =======================
@@ -250,16 +252,91 @@ class ActionExecutor:
             
 
     def _action_text(self, value: str) -> ActionResult:
-        import pyautogui
-        import pyperclip
+        """
+        Type text reliably.
+
+        Uses multiple strategies:
+        1. For simple ASCII text: pyautogui.write() (fast, no clipboard)
+        2. For complex text (newlines, tabs, unicode): clipboard with careful timing
+        """
         if not value:
             return ActionResult(False, "No text specified")
 
-        pyperclip.copy(value)
-        pyautogui.hotkey("command", "v")
+        print(f"[ActionExecutor] _action_text called, value length: {len(value)}")
+        print(f"[ActionExecutor] Value preview: {value[:50]}...")
 
-        preview = value[:20].replace('\n', '↵')
-        return ActionResult(True, f"Pasted text: {preview}...")
+        # Check if text is simple ASCII without newlines or tabs
+        # pyautogui.write() cannot handle \n or \t, so use clipboard for those
+        is_simple = all(ord(c) < 128 and c not in '\n\t' for c in value)
+        
+        if is_simple and len(value) <= 100:
+            # Use direct typing for simple text (no clipboard issues)
+            try:
+                pyautogui.write(value, interval=0.02)
+                return ActionResult(True, f"Typed: {value[:20]}...")
+            except Exception as e:
+                # Fall through to clipboard method
+                pass
+        
+        # For complex text, use clipboard with proper handling
+        try:
+            import pyperclip
+            
+            # Save current clipboard content
+            try:
+                old_clipboard = pyperclip.paste()
+            except:
+                old_clipboard = None
+            
+            # Copy new text to clipboard
+            pyperclip.copy(value)
+            print(f"[ActionExecutor] Copied to clipboard, now pasting...")
+
+            # Small delay to ensure clipboard is ready
+            time.sleep(0.05)
+            
+            # Use platform-specific paste
+            if sys.platform == "darwin":
+                # On macOS, use AppleScript for more reliable paste
+                # This avoids the 'v' key leaking issue
+                try:
+                    script = '''
+                    tell application "System Events"
+                        keystroke "v" using command down
+                    end tell
+                    '''
+                    subprocess.run(
+                        ["osascript", "-e", script],
+                        capture_output=True,
+                        timeout=2
+                    )
+                except subprocess.TimeoutExpired:
+                    # Fallback to pyautogui
+                    pyautogui.hotkey("command", "v")
+                except Exception:
+                    pyautogui.hotkey("command", "v")
+            else:
+                # Windows/Linux
+                pyautogui.hotkey("ctrl", "v")
+            
+            # Small delay after paste
+            time.sleep(0.05)
+            
+            # Restore old clipboard (optional, prevents text repetition issues)
+            if old_clipboard is not None:
+                time.sleep(0.1)  # Wait for paste to complete
+                try:
+                    pyperclip.copy(old_clipboard)
+                except:
+                    pass
+            
+            preview = value[:20].replace('\n', '↵')
+            return ActionResult(True, f"Pasted: {preview}...")
+            
+        except ImportError:
+            return ActionResult(False, "pyperclip not installed")
+        except Exception as e:
+            return ActionResult(False, f"Text error: {e}")
 
 
     

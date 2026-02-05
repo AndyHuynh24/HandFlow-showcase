@@ -1,3 +1,5 @@
+# Copyright (c) 2026 Huynh Huy. All rights reserved.
+
 """
 HandFlow MacroPad Detector
 ==========================
@@ -19,7 +21,7 @@ Detection region corners:
 - Bottom-left: BL's top-left corner OR BL2's bottom-right corner (fallback)
 - Bottom-right: BR's top-right corner OR BR2's bottom-left corner (fallback)
 
-Divides into 4x2 grid for 8 buttons.
+Divides into 4x3 grid for 12 buttons.
 """
 
 import cv2
@@ -33,7 +35,7 @@ class MacroPadDetection:
     """Detection result for a macro pad."""
     set_marker_id: int  # The top-left marker ID that identifies this set
     detection_region: np.ndarray  # 4 corners of the detection region (TL, TR, BR, BL)
-    grid_cells: List[np.ndarray]  # 8 grid cell polygons (index 0-7)
+    grid_cells: List[np.ndarray]  # 12 grid cell polygons (index 0-11)
     marker_positions: Dict[int, np.ndarray]  # Detected/estimated marker centers
     estimated_markers: set  # Set of marker IDs that were estimated
 
@@ -73,8 +75,8 @@ class MacroPadDetector:
     POS_BL2 = 'BL2'
     POS_BR2 = 'BR2'
 
-    # Map constant IDs
-    # TL is set-dependent
+    # Map constant IDs for PAPER macropad
+    # TL is set-dependent (12, 13, 14 for paper sets)
     FIXED_IDS = {
         POS_TR: 4,
         POS_ML: 5,
@@ -85,9 +87,23 @@ class MacroPadDetector:
         POS_BR2: 10,  # Fallback for BR
     }
 
-    # Grid layout: 4 columns x 2 rows = 8 buttons
+    # Screen overlay uses DIFFERENT marker IDs (Set ID 20)
+    # This allows both paper macropad and screen overlay to be visible simultaneously
+    SCREEN_OVERLAY_SET_ID = 20
+    SCREEN_OVERLAY_IDS = {
+        POS_TR: 21,
+        POS_ML: 22,
+        POS_MR: 23,
+        POS_BL: 24,
+        POS_BR: 25,
+        POS_BL2: 26,
+        POS_BR2: 27,
+    }
+
+    # Grid layout: 4 columns, rows vary by set
     GRID_COLS = 4
-    GRID_ROWS = 2
+    GRID_ROWS_PAPER = 2      # Paper macropad: 4x2 = 8 buttons
+    GRID_ROWS_SCREEN = 3     # Screen overlay: 4x3 = 12 buttons (one extra row)
     
     # Detection mode presets
     MODE_BALANCED = "balanced"
@@ -162,6 +178,9 @@ class MacroPadDetector:
         self._marker_cache: Dict[str, Tuple[np.ndarray, np.ndarray]] = {} 
         # Cached detection region corners (TL, TR, BR, BL) when all 4 are visible
         self._cached_region_corners: Optional[Dict[str, np.ndarray]] = None
+        # Cached middle marker centers for translation calculation
+        self._cached_ml_center: Optional[np.ndarray] = None
+        self._cached_mr_center: Optional[np.ndarray] = None
         self._estimated_pos_names: set = set()
         
     def detect(self, frame: np.ndarray, known_set_ids: List[int] = None) -> bool:
@@ -239,21 +258,29 @@ class MacroPadDetector:
             return False
 
         self._current_set_marker_id = set_marker_id
-        
+
         # -------------------------------------------------
         # 3. Map positions to IDs for this frame
         # -------------------------------------------------
+        # Use different IDs for screen overlay (set ID 20) vs paper macropad
+        if set_marker_id == self.SCREEN_OVERLAY_SET_ID:
+            # Screen overlay uses unique IDs (21-27)
+            id_map = self.SCREEN_OVERLAY_IDS
+        else:
+            # Paper macropad uses standard IDs (4-10)
+            id_map = self.FIXED_IDS
+
         pos_id_map = {
             self.POS_TL: set_marker_id,
-            self.POS_TR: self.FIXED_IDS[self.POS_TR],
-            self.POS_BL: self.FIXED_IDS[self.POS_BL],
-            self.POS_BR: self.FIXED_IDS[self.POS_BR],
+            self.POS_TR: id_map[self.POS_TR],
+            self.POS_BL: id_map[self.POS_BL],
+            self.POS_BR: id_map[self.POS_BR],
             # Middle markers for estimation help
-            self.POS_ML: self.FIXED_IDS[self.POS_ML],
-            self.POS_MR: self.FIXED_IDS[self.POS_MR],
+            self.POS_ML: id_map[self.POS_ML],
+            self.POS_MR: id_map[self.POS_MR],
             # Fallback bottom markers
-            self.POS_BL2: self.FIXED_IDS[self.POS_BL2],
-            self.POS_BR2: self.FIXED_IDS[self.POS_BR2],
+            self.POS_BL2: id_map[self.POS_BL2],
+            self.POS_BR2: id_map[self.POS_BR2],
         }
         
         # -------------------------------------------------
@@ -325,48 +352,53 @@ class MacroPadDetector:
         self._estimated_pos_names = set()
 
         # Get middle marker edge points for estimation (if visible)
-        # Left edge: TL corner 1 → ML corner 1 (top-right) → BL corner 0
-        # Right edge: TR corner 0 → MR corner 0 (top-left) → BR corner 1
         ml_corners = detected_data[pos_id_map[self.POS_ML]][1] if pos_id_map[self.POS_ML] in detected_data else None
         mr_corners = detected_data[pos_id_map[self.POS_MR]][1] if pos_id_map[self.POS_MR] in detected_data else None
 
+        visible_corners = [k for k in ['TL', 'TR', 'BL', 'BR'] if k in region_corners]
+        missing_corners = [k for k in ['TL', 'TR', 'BL', 'BR'] if k not in region_corners]
+
         if len(region_corners) == 4:
-            # All 4 corners visible - update cache
-            self._marker_cache.clear()
+            # All 4 corners visible - update cache for future estimation
             for pos, data in current_data_by_pos.items():
                 self._marker_cache[pos] = data
+            
+            # Store reference detection region corners
+            self._cached_region_corners = {
+                'TL': region_corners['TL'].copy(),
+                'TR': region_corners['TR'].copy(),
+                'BL': region_corners['BL'].copy(),
+                'BR': region_corners['BR'].copy(),
+            }
+            
+            # Also cache middle marker centers for 2-marker case translation
+            if ml_corners is not None:
+                self._cached_ml_center = np.mean(ml_corners, axis=0).copy()
+            if mr_corners is not None:
+                self._cached_mr_center = np.mean(mr_corners, axis=0).copy()
 
         elif len(region_corners) == 3:
-            # 3 corners visible - estimate the 4th
-            missing = [k for k in ['TL', 'TR', 'BL', 'BR'] if k not in region_corners][0]
+            # 3 corners visible - estimate the 4th using original methods
+            missing = missing_corners[0]
             estimated = None
 
-            # Priority 1: Use middle marker for better accuracy (handles perspective)
-            # Layout: TL → ML → BL2 → BL (vertically stacked on left)
-            #         TR → MR → BR2 → BR (vertically stacked on right)
-            # ML/MR bottom edge is roughly at the midpoint between top and bottom of detection area
-            # So use the BOTTOM edge of middle markers (corner 2 for ML, corner 3 for MR)
+            # Method 1: Use middle marker for better accuracy (handles perspective)
             if missing == 'BL' and ml_corners is not None and 'TL' in region_corners:
-                # Use ML's bottom-right corner (index 2) - on the left edge, at bottom of ML
                 ml_bottom_edge = ml_corners[2]
                 marker_size = np.linalg.norm(ml_corners[0] - ml_corners[1])
                 estimated = 2 * ml_bottom_edge - region_corners['TL'] - np.array([0, marker_size]) 
             elif missing == 'BR' and mr_corners is not None and 'TR' in region_corners:
-                # Use MR's bottom-left corner (index 3) - on the right edge, at bottom of MR
                 mr_bottom_edge = mr_corners[3]
                 marker_size = np.linalg.norm(mr_corners[0] - mr_corners[1])
-                print(type(mr_bottom_edge))
                 estimated = 2 * mr_bottom_edge - region_corners['TR'] - np.array([0, marker_size])
             elif missing == 'TL' and ml_corners is not None and 'BL' in region_corners:
-                # Use ML's bottom-right corner (index 2)
                 ml_bottom_edge = ml_corners[2]
                 estimated = 2 * ml_bottom_edge - region_corners['BL']
             elif missing == 'TR' and mr_corners is not None and 'BR' in region_corners:
-                # Use MR's bottom-left corner (index 3)
                 mr_bottom_edge = mr_corners[3]
                 estimated = 2 * mr_bottom_edge - region_corners['BR']
 
-            # Priority 2: Fall back to parallelogram (less accurate with perspective)
+            # Method 2: Fall back to parallelogram estimation
             if estimated is None:
                 if missing == 'TL':
                     estimated = region_corners['TR'] + region_corners['BL'] - region_corners['BR']
@@ -377,14 +409,106 @@ class MacroPadDetector:
                 elif missing == 'BR':
                     estimated = region_corners['TR'] + region_corners['BL'] - region_corners['TL']
 
+            # Apply cache-based smoothing if available (for consistency)
+            if self._cached_region_corners is not None and missing in self._cached_region_corners:
+                # Compute translation from cached visible corners
+                translations = []
+                for v in visible_corners:
+                    if v in self._cached_region_corners:
+                        delta = region_corners[v] - self._cached_region_corners[v]
+                        translations.append(delta)
+                
+                if translations:
+                    avg_translation = np.mean(translations, axis=0)
+                    cached_estimate = self._cached_region_corners[missing] + avg_translation
+                    # Blend: 70% cached for smoothness, 30% calculated for accuracy
+                    estimated = 0.7 * cached_estimate + 0.3 * estimated
+
             region_corners[missing] = estimated
+
+            # Update cache for visible corners
+            self._cached_region_corners = self._cached_region_corners or {}
+            for v in visible_corners:
+                self._cached_region_corners[v] = region_corners[v].copy()
+            self._cached_region_corners[missing] = estimated.copy()
 
             # Mark as estimated
             pos_name_map = {'TL': self.POS_TL, 'TR': self.POS_TR, 'BL': self.POS_BL, 'BR': self.POS_BR}
             self._estimated_pos_names = {pos_name_map[missing]}
 
+        elif len(region_corners) >= 1 and self._cached_region_corners is not None:
+            # 1-2 corner markers visible + cache exists
+            # Can use any visible markers (corners + middle markers) for translation
+            # Requirement: at least 1 corner marker visible AND at least 2 total markers for translation
+            
+            # Collect all visible marker centers for translation calculation
+            visible_marker_centers = {}
+            
+            # Add visible corner markers
+            for v in visible_corners:
+                visible_marker_centers[v] = region_corners[v]
+            
+            # Add middle markers if visible (use their centers)
+            if ml_corners is not None:
+                visible_marker_centers['ML'] = np.mean(ml_corners, axis=0)
+            if mr_corners is not None:
+                visible_marker_centers['MR'] = np.mean(mr_corners, axis=0)
+            
+            # Need at least 2 markers total for reliable translation
+            if len(visible_marker_centers) >= 2 and len(visible_corners) >= 1:
+                # Compute translation from all visible markers that are in cache
+                translations = []
+                
+                # Check corner markers
+                for v in visible_corners:
+                    if v in self._cached_region_corners:
+                        delta = region_corners[v] - self._cached_region_corners[v]
+                        translations.append(delta)
+                
+                # Check middle markers (need to cache their positions too)
+                if 'ML' in visible_marker_centers and hasattr(self, '_cached_ml_center') and self._cached_ml_center is not None:
+                    delta = visible_marker_centers['ML'] - self._cached_ml_center
+                    translations.append(delta)
+                if 'MR' in visible_marker_centers and hasattr(self, '_cached_mr_center') and self._cached_mr_center is not None:
+                    delta = visible_marker_centers['MR'] - self._cached_mr_center
+                    translations.append(delta)
+                
+                if len(translations) >= 1:
+                    avg_translation = np.mean(translations, axis=0)
+                    
+                    # Estimate all missing corners using cache + translation
+                    for missing in missing_corners:
+                        if missing in self._cached_region_corners:
+                            estimated = self._cached_region_corners[missing] + avg_translation
+                            region_corners[missing] = estimated
+                    
+                    # Update cache for visible corners
+                    for v in visible_corners:
+                        self._cached_region_corners[v] = region_corners[v].copy()
+                    for m in missing_corners:
+                        if m in region_corners:
+                            self._cached_region_corners[m] = region_corners[m].copy() if hasattr(region_corners[m], 'copy') else region_corners[m]
+                    
+                    # Update middle marker cache
+                    if 'ML' in visible_marker_centers:
+                        self._cached_ml_center = visible_marker_centers['ML'].copy()
+                    if 'MR' in visible_marker_centers:
+                        self._cached_mr_center = visible_marker_centers['MR'].copy()
+                    
+                    # Mark as estimated
+                    pos_name_map = {'TL': self.POS_TL, 'TR': self.POS_TR, 'BL': self.POS_BL, 'BR': self.POS_BR}
+                    self._estimated_pos_names = {pos_name_map[m] for m in missing_corners if m in region_corners}
+                else:
+                    # No valid cache data for translation
+                    self._detection_valid = False
+                    return False
+            else:
+                # Not enough markers
+                self._detection_valid = False
+                return False
+
         else:
-            # Less than 3 corners, skip
+            # No corner markers or no cache
             self._detection_valid = False
             return False
 
@@ -399,7 +523,7 @@ class MacroPadDetector:
         # -------------------------------------------------
         # 7. Compute variables for result
         # -------------------------------------------------
-        grid_cells = self._compute_grid_cells(detection_region)
+        grid_cells = self._compute_grid_cells(detection_region, set_marker_id)
         
         marker_positions = {}
         for pos, (center, _) in current_data_by_pos.items():
@@ -419,40 +543,50 @@ class MacroPadDetector:
         self._detection_valid = True
         return True
     
-    def _compute_grid_cells(self, region: np.ndarray) -> List[np.ndarray]:
+    def _get_grid_rows(self, set_id: int) -> int:
+        """Get number of grid rows based on set ID."""
+        if set_id == self.SCREEN_OVERLAY_SET_ID:
+            return self.GRID_ROWS_SCREEN  # 3 rows for screen overlay
+        return self.GRID_ROWS_PAPER  # 2 rows for paper macropad
+
+    def _compute_grid_cells(self, region: np.ndarray, set_id: int) -> List[np.ndarray]:
         """
-        Compute 4x2 grid cell polygons from detection region.
-        
+        Compute grid cell polygons from detection region.
+
         Args:
             region: 4 corners of detection region (TL, TR, BR, BL)
-            
+            set_id: Set marker ID (determines number of rows)
+
         Returns:
-            List of 8 cell polygons (row-major order)
+            List of cell polygons (row-major order)
+            - Paper (sets 12,13,14): 4x2 = 8 cells
+            - Screen overlay (set 20): 4x3 = 12 cells
         """
         tl, tr, br, bl = region
-        
+        num_rows = self._get_grid_rows(set_id)
+
         cells = []
-        
-        for row in range(self.GRID_ROWS):
+
+        for row in range(num_rows):
             for col in range(self.GRID_COLS):
                 # Compute cell corners using bilinear interpolation
                 u0 = col / self.GRID_COLS
                 u1 = (col + 1) / self.GRID_COLS
-                v0 = row / self.GRID_ROWS
-                v1 = (row + 1) / self.GRID_ROWS
-                
+                v0 = row / num_rows
+                v1 = (row + 1) / num_rows
+
                 def interp(u, v):
                     top = tl + u * (tr - tl)
                     bottom = bl + u * (br - bl)
                     return top + v * (bottom - top)
-                
+
                 cell_tl = interp(u0, v0)
                 cell_tr = interp(u1, v0)
                 cell_br = interp(u1, v1)
                 cell_bl = interp(u0, v1)
-                
+
                 cells.append(np.array([cell_tl, cell_tr, cell_br, cell_bl], dtype=np.float32))
-        
+
         return cells
     
     def get_button_at_point(self, point: Tuple[float, float]) -> Optional[int]:
@@ -463,7 +597,7 @@ class MacroPadDetector:
             point: (x, y) in camera coordinates
             
         Returns:
-            Button index (0-7) or None if not in any cell
+            Button index (0-11) or None if not in any cell
         """
         if not self._detection_valid or self._last_detection is None:
             return None
@@ -508,7 +642,8 @@ class MacroPadDetector:
         finger_pos: Optional[Tuple[float, float]] = None,
         hovered_button: Optional[int] = None,
         activated_button: Optional[int] = None,
-        set_name: str = ""
+        set_name: str = "",
+        button_names: Optional[List[str]] = None
     ) -> np.ndarray:
         """
         Draw debug visualization.
@@ -519,6 +654,7 @@ class MacroPadDetector:
             hovered_button: Currently hovered button index
             activated_button: Just activated button index
             set_name: Name of current set
+            button_names: Optional list of button names (len=8) to display instead of indices
             
         Returns:
             Frame with debug overlay
@@ -553,10 +689,14 @@ class MacroPadDetector:
             
             cv2.polylines(output, [cell_pts], True, color, thickness)
             
-            # Draw button number
+            # Draw button name (if provided) or number
             center = np.mean(cell, axis=0).astype(int)
-            cv2.putText(output, str(idx + 1), (center[0] - 5, center[1] + 5),
-                       cv2.FONT_HERSHEY_SIMPLEX, 0.5, color, 1)
+            if button_names and idx < len(button_names) and button_names[idx]:
+                label = button_names[idx]
+            else:
+                label = str(idx + 1)
+            cv2.putText(output, label, (center[0] - 5, center[1] + 5),
+                       cv2.FONT_HERSHEY_SIMPLEX, 0.4, color, 1)
         
         # Draw marker positions
         for mid, pos in det.marker_positions.items():
@@ -590,5 +730,8 @@ class MacroPadDetector:
         self._last_detection = None
         self._detection_valid = False
         self._marker_cache.clear()
+        self._cached_region_corners = None
+        self._cached_ml_center = None
+        self._cached_mr_center = None
         self._estimated_pos_names.clear()
         self._current_set_marker_id = None

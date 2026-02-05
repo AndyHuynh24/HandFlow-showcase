@@ -1,4 +1,6 @@
 #!/usr/bin/env python
+# Copyright (c) 2026 Huynh Huy. All rights reserved.
+
 """
 Model Inference Benchmark
 =========================

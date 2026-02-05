@@ -1,5 +1,8 @@
+# Copyright (c) 2026 Huynh Huy. All rights reserved.
+
 import math
 import time
+
 
 class OneEuroFilter:
     def __init__(self, t0, x0, dx0=0.0, min_cutoff=1.0, beta=0.0, d_cutoff=1.0):

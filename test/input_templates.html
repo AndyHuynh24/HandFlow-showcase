@@ -1,0 +1,278 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>HTML Input Templates - MacroPad Demo</title>
+    <style>
+        * { box-sizing: border-box; }
+        body {
+            font-family: 'Segoe UI', system-ui, sans-serif;
+            max-width: 900px;
+            margin: 0 auto;
+            padding: 40px 20px;
+            background: #1a1a2e;
+            color: #eee;
+        }
+        h1 { color: #00d4ff; text-align: center; }
+        h2 { color: #ff6b6b; margin-top: 40px; border-bottom: 2px solid #333; padding-bottom: 10px; }
+        .demo-section {
+            background: #16213e;
+            padding: 20px;
+            border-radius: 10px;
+            margin: 20px 0;
+        }
+        .code-hint {
+            background: #0f0f23;
+            padding: 10px 15px;
+            border-radius: 5px;
+            font-family: 'Fira Code', monospace;
+            font-size: 13px;
+            color: #7fdbca;
+            margin-bottom: 15px;
+            border-left: 3px solid #00d4ff;
+        }
+        label {
+            display: block;
+            margin: 15px 0 5px;
+            color: #aaa;
+            font-size: 14px;
+        }
+        input, select, textarea {
+            width: 100%;
+            padding: 12px;
+            border: 2px solid #333;
+            border-radius: 8px;
+            background: #0f0f23;
+            color: #fff;
+            font-size: 16px;
+            transition: border-color 0.3s;
+        }
+        input:focus, select:focus, textarea:focus {
+            outline: none;
+            border-color: #00d4ff;
+        }
+        button {
+            background: linear-gradient(135deg, #00d4ff, #0099cc);
+            color: #000;
+            border: none;
+            padding: 12px 30px;
+            border-radius: 8px;
+            font-size: 16px;
+            font-weight: bold;
+            cursor: pointer;
+            margin: 10px 5px 10px 0;
+            transition: transform 0.2s;
+        }
+        button:hover { transform: scale(1.05); }
+        .btn-danger { background: linear-gradient(135deg, #ff6b6b, #cc0000); }
+        .btn-success { background: linear-gradient(135deg, #4ecdc4, #00aa99); }
+        .input-row { display: flex; gap: 15px; }
+        .input-row > div { flex: 1; }
+        .checkbox-group, .radio-group {
+            display: flex;
+            gap: 20px;
+            flex-wrap: wrap;
+        }
+        .checkbox-group label, .radio-group label {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            cursor: pointer;
+        }
+        input[type="checkbox"], input[type="radio"] { width: auto; }
+        .range-value {
+            text-align: center;
+            font-size: 24px;
+            color: #00d4ff;
+            margin-top: 10px;
+        }
+        .instructions {
+            background: #2a2a4a;
+            padding: 20px;
+            border-radius: 10px;
+            margin-bottom: 30px;
+        }
+        .instructions h3 { color: #4ecdc4; margin-top: 0; }
+        .instructions ul { padding-left: 20px; }
+        .instructions li { margin: 8px 0; }
+        kbd {
+            background: #333;
+            padding: 3px 8px;
+            border-radius: 4px;
+            font-family: monospace;
+        }
+    </style>
+</head>
+<body>
+    <h1>HTML Input Templates</h1>
+    <p style="text-align: center; color: #888;">MacroPad Demo - Type templates quickly with gesture controls</p>
+
+    <div class="instructions">
+        <h3>Demo Instructions</h3>
+        <ul>
+            <li>Use MacroPad buttons to type out HTML templates instantly</li>
+            <li>Each section shows the code template and a live preview</li>
+            <li>Configure macropad buttons with "Type Text" action</li>
+            <li>Example: Button 1 = <kbd>&lt;input type="text"&gt;</kbd></li>
+        </ul>
+    </div>
+
+    <!-- TEXT INPUTS -->
+    <h2>Text Inputs</h2>
+    <div class="demo-section">
+        <div class="code-hint">&lt;input type="text" placeholder="Enter text..."&gt;</div>
+        <label>Text Input:</label>
+        <input type="text" placeholder="Type here...">
+
+        <div class="code-hint">&lt;input type="password" placeholder="Password"&gt;</div>
+        <label>Password:</label>
+        <input type="password" placeholder="Enter password...">
+
+        <div class="code-hint">&lt;input type="email" placeholder="email@example.com"&gt;</div>
+        <label>Email:</label>
+        <input type="email" placeholder="email@example.com">
+
+        <div class="code-hint">&lt;input type="url" placeholder="https://..."&gt;</div>
+        <label>URL:</label>
+        <input type="url" placeholder="https://example.com">
+
+        <div class="code-hint">&lt;input type="tel" placeholder="Phone number"&gt;</div>
+        <label>Phone:</label>
+        <input type="tel" placeholder="+1 (555) 000-0000">
+
+        <div class="code-hint">&lt;input type="search" placeholder="Search..."&gt;</div>
+        <label>Search:</label>
+        <input type="search" placeholder="Search anything...">
+    </div>
+
+    <!-- NUMBER INPUTS -->
+    <h2>Number Inputs</h2>
+    <div class="demo-section">
+        <div class="code-hint">&lt;input type="number" min="0" max="100" step="1"&gt;</div>
+        <label>Number (0-100):</label>
+        <input type="number" min="0" max="100" step="1" value="50">
+
+        <div class="code-hint">&lt;input type="range" min="0" max="100" value="50"&gt;</div>
+        <label>Range Slider:</label>
+        <input type="range" min="0" max="100" value="50" id="rangeDemo" oninput="document.getElementById('rangeValue').textContent = this.value">
+        <div class="range-value" id="rangeValue">50</div>
+    </div>
+
+    <!-- DATE & TIME -->
+    <h2>Date & Time Inputs</h2>
+    <div class="demo-section">
+        <div class="input-row">
+            <div>
+                <div class="code-hint">&lt;input type="date"&gt;</div>
+                <label>Date:</label>
+                <input type="date">
+            </div>
+            <div>
+                <div class="code-hint">&lt;input type="time"&gt;</div>
+                <label>Time:</label>
+                <input type="time">
+            </div>
+        </div>
+
+        <div class="input-row">
+            <div>
+                <div class="code-hint">&lt;input type="datetime-local"&gt;</div>
+                <label>DateTime:</label>
+                <input type="datetime-local">
+            </div>
+            <div>
+                <div class="code-hint">&lt;input type="month"&gt;</div>
+                <label>Month:</label>
+                <input type="month">
+            </div>
+        </div>
+
+        <div class="code-hint">&lt;input type="week"&gt;</div>
+        <label>Week:</label>
+        <input type="week">
+    </div>
+
+    <!-- SELECTION INPUTS -->
+    <h2>Selection Inputs</h2>
+    <div class="demo-section">
+        <div class="code-hint">&lt;select&gt;&lt;option&gt;...&lt;/option&gt;&lt;/select&gt;</div>
+        <label>Dropdown Select:</label>
+        <select>
+            <option value="">-- Choose an option --</option>
+            <option value="1">Option 1 - First Choice</option>
+            <option value="2">Option 2 - Second Choice</option>
+            <option value="3">Option 3 - Third Choice</option>
+        </select>
+
+        <div class="code-hint">&lt;input type="checkbox"&gt;</div>
+        <label>Checkboxes:</label>
+        <div class="checkbox-group">
+            <label><input type="checkbox" checked> Feature A</label>
+            <label><input type="checkbox"> Feature B</label>
+            <label><input type="checkbox"> Feature C</label>
+            <label><input type="checkbox"> Feature D</label>
+        </div>
+
+        <div class="code-hint">&lt;input type="radio" name="group"&gt;</div>
+        <label>Radio Buttons:</label>
+        <div class="radio-group">
+            <label><input type="radio" name="choice" checked> Choice A</label>
+            <label><input type="radio" name="choice"> Choice B</label>
+            <label><input type="radio" name="choice"> Choice C</label>
+        </div>
+    </div>
+
+    <!-- FILE & COLOR -->
+    <h2>File & Color</h2>
+    <div class="demo-section">
+        <div class="code-hint">&lt;input type="file" accept="image/*"&gt;</div>
+        <label>File Upload:</label>
+        <input type="file" accept="image/*">
+
+        <div class="code-hint">&lt;input type="color" value="#00d4ff"&gt;</div>
+        <label>Color Picker:</label>
+        <input type="color" value="#00d4ff" style="height: 50px; cursor: pointer;">
+    </div>
+
+    <!-- TEXTAREA -->
+    <h2>Textarea</h2>
+    <div class="demo-section">
+        <div class="code-hint">&lt;textarea rows="4" placeholder="..."&gt;&lt;/textarea&gt;</div>
+        <label>Multi-line Text:</label>
+        <textarea rows="4" placeholder="Enter multiple lines of text here..."></textarea>
+    </div>
+
+    <!-- BUTTONS -->
+    <h2>Buttons</h2>
+    <div class="demo-section">
+        <div class="code-hint">&lt;button type="submit"&gt;Submit&lt;/button&gt;</div>
+        <button type="button">Primary Button</button>
+        <button type="button" class="btn-success">Success Button</button>
+        <button type="button" class="btn-danger">Danger Button</button>
+
+        <div class="code-hint" style="margin-top: 20px;">&lt;input type="submit" value="Submit Form"&gt;</div>
+        <input type="submit" value="Submit Form" style="cursor: pointer;">
+
+        <div class="code-hint">&lt;input type="reset" value="Reset Form"&gt;</div>
+        <input type="reset" value="Reset Form" style="cursor: pointer;">
+    </div>
+
+    <!-- QUICK TEMPLATES -->
+    <h2>Quick Copy Templates</h2>
+    <div class="demo-section">
+        <p style="color: #888; margin-bottom: 20px;">Configure these as MacroPad "Type Text" actions:</p>
+
+        <div class="code-hint">&lt;input type="text" id="" name="" placeholder="" required&gt;</div>
+        <div class="code-hint">&lt;input type="email" id="email" name="email" placeholder="Enter email" required&gt;</div>
+        <div class="code-hint">&lt;input type="password" id="password" name="password" minlength="8" required&gt;</div>
+        <div class="code-hint">&lt;input type="number" id="" name="" min="0" max="100" step="1" value="0"&gt;</div>
+        <div class="code-hint">&lt;select id="" name=""&gt;&lt;option value=""&gt;Select...&lt;/option&gt;&lt;/select&gt;</div>
+        <div class="code-hint">&lt;textarea id="" name="" rows="4" cols="50"&gt;&lt;/textarea&gt;</div>
+        <div class="code-hint">&lt;button type="submit" class=""&gt;Submit&lt;/button&gt;</div>
+        <div class="code-hint">&lt;label for=""&gt;&lt;/label&gt;</div>
+        <div class="code-hint">&lt;form action="" method="POST"&gt;&lt;/form&gt;</div>
+    </div>
+
+</body>
+</html>

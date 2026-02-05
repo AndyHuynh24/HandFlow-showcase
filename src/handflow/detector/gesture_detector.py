@@ -1,3 +1,5 @@
+# Copyright (c) 2026 Huynh Huy. All rights reserved.
+
 """
 HandFlow Gesture Detector
 ======================
@@ -175,10 +177,16 @@ class GestureDetector:
         self._last_delta_time = 1.0 / target_fps
         self._target_fps = target_fps  # Reference FPS for velocity normalization
 
-        # Data collection rate limiting (collect keypoints at exactly target FPS)
-        self._data_collection_interval = 1.0 / target_fps  # 50ms for 20 FPS
-        self._last_data_collection_time = time.time()  # Initialize to now
+        # Adaptive frame-based sampling (replaces time-based rate limiting)
+        # This approach:
+        # - Never waits/sleeps - uses all available processing power
+        # - If actual FPS > target: skips frames to hit target rate
+        # - If actual FPS <= target: uses every frame (no data loss)
         self._data_rate_limit_enabled = True  # Can be toggled
+        self._frame_accumulator = 0.0  # Accumulates frames for sampling
+        self._actual_fps = target_fps  # Measured actual FPS
+        self._fps_sample_times: deque = deque(maxlen=30)  # Rolling window for FPS calculation
+        self._last_frame_time = time.time()
 
         # Frame interpolation for slow devices
         # Store last known keypoints for interpolation when frames are missed
@@ -610,24 +618,49 @@ class GestureDetector:
         # This runs regardless of whether gesture model runs this frame
         self._update_continuous_cursor()
 
-        # Update sequences with rate limiting (collect at exactly target FPS)
-        # With frame interpolation for slow devices
+        # Adaptive frame-based sampling for sequence collection
+        # - Processes every frame through MediaPipe (smooth landmarks)
+        # - Samples frames for gesture model at target FPS rate
+        # - Never waits - uses all available CPU cycles
+        # - Adapts to actual FPS: if slow, use every frame; if fast, skip to hit target
         current_time = time.time()
-        time_since_last = current_time - self._last_data_collection_time
 
-        # Determine if we should collect this frame
+        # Update actual FPS measurement (rolling average)
+        self._fps_sample_times.append(current_time)
+        if len(self._fps_sample_times) >= 2:
+            time_span = self._fps_sample_times[-1] - self._fps_sample_times[0]
+            if time_span > 0:
+                self._actual_fps = (len(self._fps_sample_times) - 1) / time_span
+
+        # Determine if we should collect this frame using adaptive sampling
         if self._data_rate_limit_enabled:
-            should_collect = time_since_last >= self._data_collection_interval
-            if should_collect:
-                # Calculate how many frames we missed (for interpolation)
-                missed_frames = int(time_since_last / self._data_collection_interval) - 1
-                missed_frames = min(missed_frames, self.sequence_length - 1)  # Cap to avoid overflow
+            # Calculate skip rate: how many frames to skip to hit target FPS
+            # If actual_fps=30 and target=20: skip_rate=1.5 (collect every 1.5 frames)
+            # If actual_fps=15 and target=20: skip_rate=0.75 (collect every frame)
+            if self._actual_fps > 0:
+                skip_rate = self._actual_fps / self._target_fps
+            else:
+                skip_rate = 1.0
 
-                # Update time to maintain exact interval
-                self._last_data_collection_time += self._data_collection_interval * (missed_frames + 1)
-                # Prevent drift if we fell too far behind
-                if current_time - self._last_data_collection_time > self._data_collection_interval:
-                    self._last_data_collection_time = current_time
+            # Accumulate frames
+            self._frame_accumulator += 1.0
+
+            # Collect when accumulator reaches skip rate threshold
+            if self._frame_accumulator >= skip_rate:
+                should_collect = True
+                self._frame_accumulator -= skip_rate
+                # Cap accumulator to prevent overflow after pause
+                if self._frame_accumulator > skip_rate * 2:
+                    self._frame_accumulator = 0.0
+            else:
+                should_collect = False
+
+            # Always collect if FPS is at or below target (don't lose data)
+            if self._actual_fps <= self._target_fps:
+                should_collect = True
+                self._frame_accumulator = 0.0  # Reset accumulator
+
+            missed_frames = 0  # No interpolation needed with this approach
         else:
             should_collect = True
             missed_frames = 0
@@ -671,7 +704,7 @@ class GestureDetector:
                 collected = True
 
             if collected:
-                self._data_fps_counter += 1 + missed_frames  # Count all frames (real + interpolated)
+                self._data_fps_counter += 1  # Count collected frames
 
         # Right hand prediction - only run TCN model every N frames
         if run_gesture_model and self.right_lock and len(self.right_sequence) == self.sequence_length:
@@ -706,8 +739,12 @@ class GestureDetector:
             image = self._draw_history(image)
 
         # Draw FPS - always show (for performance testing)
+        # Shows: Data FPS (sampled for model) / Actual FPS (camera frames) / Target FPS
         img_h, img_w, _ = image.shape
-        cv2.putText(image, f"FPS: {self._data_fps:.1f} ({self.current_fps:.1f})", (5, img_h - 8),
+        fps_text = f"FPS: {self._data_fps:.0f}/{self._actual_fps:.0f}/{self._target_fps:.0f}"
+        if not self._data_rate_limit_enabled:
+            fps_text += " [UNCAPPED]"
+        cv2.putText(image, fps_text, (5, img_h - 8),
                    cv2.FONT_HERSHEY_SIMPLEX, 0.35, (255, 255, 0), 1)
 
         # Reset locks
