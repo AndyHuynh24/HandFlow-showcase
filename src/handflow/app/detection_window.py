@@ -647,7 +647,17 @@ class DetectionWindow(ctk.CTkToplevel):
                                 pixel_tip = (idx_norm[0] * w_small, idx_norm[1] * h_small)
                                 gesture = info.get('gesture', 'none')
                                 is_touching = gesture == 'touch'
-                                self.macropad_manager.update_finger_state(pixel_tip, is_touching)
+                                # Skip activation when screen overlay is visible - it handles activation separately
+                                # This prevents double activation (one from update_finger_state, one from _process_overlay_commands)
+                                screen_overlay_active = (
+                                    self._screen_overlay is not None and
+                                    self._screen_overlay.is_visible()
+                                )
+                                self.macropad_manager.update_finger_state(
+                                    pixel_tip,
+                                    is_touching,
+                                    skip_activation=screen_overlay_active
+                                )
 
                         if not self._disable_drawing:
                             output = self.macropad_manager.draw_debug(output)

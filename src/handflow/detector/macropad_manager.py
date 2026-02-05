@@ -173,16 +173,19 @@ class MacroPadManager:
         return detected or self._frames_since_detection < self.DETECTION_GRACE_FRAMES
     
     def update_finger_state(
-        self, 
-        finger_pos: Optional[Tuple[float, float]], 
-        is_touching: bool
+        self,
+        finger_pos: Optional[Tuple[float, float]],
+        is_touching: bool,
+        skip_activation: bool = False
     ):
         """
         Update finger position and touch state.
-        
+
         Args:
             finger_pos: (x, y) finger tip position in camera coordinates, or None
             is_touching: True if touch gesture detected
+            skip_activation: If True, update hover state but don't trigger button activation
+                            (used when screen overlay is handling activation separately)
         """
         self._finger_pos = finger_pos
         was_touching = self._finger_touching
@@ -219,11 +222,15 @@ class MacroPadManager:
         if is_touching != was_touching:
             print(f"[MacroPad] Touch state changed: {was_touching} -> {is_touching}, hovered={self._hovered_button}, effective={effective_hover}")
 
-        # Check for activation 
+        # Check for activation
         # Use effective_hover which includes recent memory for robustness
+        # Skip activation if screen overlay is handling it separately (prevents double activation)
         if is_touching and not was_touching and effective_hover is not None:
-            self.logger.info(f"[MacroPad] Touch detected on button {effective_hover}!")
-            self._activate_button(effective_hover)
+            if skip_activation:
+                print(f"[MacroPad] Touch detected on button {effective_hover}, but skipping (screen overlay handling)")
+            else:
+                self.logger.info(f"[MacroPad] Touch detected on button {effective_hover}!")
+                self._activate_button(effective_hover)
     
     def _activate_button(self, button_idx: int, force_set_id: Optional[int] = None):
         """

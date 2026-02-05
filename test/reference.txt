@@ -1,0 +1,115 @@
+OpenCV Demo Reference Guide
+============================
+
+DEMO WORKFLOW:
+1. Open opencv_demo.py (or cv_demo.py for blank template)
+2. Use MacroPad buttons to insert code
+3. Set breakpoints at marked lines (click left of line number)
+4. Press F5 to start debugging
+5. Use GESTURE to step through: Right thumb-middle swipe (F10)
+6. Press 'q' in the OpenCV window to quit
+
+GESTURE FOR DEBUGGING:
+- Right_thumb_middle_swipe -> F10 (Step Over)
+  Use this gesture to step through code line by line!
+
+
+========================================
+BUTTON 0: CV VIDEO LOOP
+========================================
+Insert inside main() function
+
+Code:
+    cap = cv2.VideoCapture(0)
+    while True:
+        ret, frame = cap.read()
+        if not ret:
+            break
+        cv2.imshow('frame', frame)
+        if cv2.waitKey(1) & 0xFF == ord('q'):
+            break
+    cap.release()
+    cv2.destroyAllWindows()
+
+BREAKPOINTS TO ADD:
+  [BP1] cap = cv2.VideoCapture(0)   <- Camera initialization
+  [BP2] ret, frame = cap.read()     <- Frame capture (step here to see frames)
+
+
+========================================
+BUTTON 1: DRAW RECTANGLE
+========================================
+Insert INSIDE the while loop, BEFORE cv2.imshow()
+
+Code:
+    x1, y1 = 100, 100  # top-left
+    x2, y2 = 300, 250  # bottom-right
+    cv2.rectangle(frame, (x1, y1), (x2, y2), (0, 255, 0), 2)
+
+BREAKPOINT TO ADD:
+  [BP3] x1, y1 = 100, 100           <- Rectangle drawing starts
+
+
+========================================
+BUTTON 2: DRAW TEXT
+========================================
+Insert INSIDE the while loop, AFTER rectangle, BEFORE cv2.imshow()
+
+Code:
+    cv2.putText(frame, 'OpenCV Demo', (110, 180), cv2.FONT_HERSHEY_SIMPLEX, 0.8, (255, 255, 255), 2)
+
+BREAKPOINT TO ADD:
+  [BP4] cv2.putText(...)            <- Text drawing
+
+
+========================================
+BREAKPOINT SUMMARY (4 total):
+========================================
+  [BP1] cap = cv2.VideoCapture(0)   - Init camera
+  [BP2] ret, frame = cap.read()     - Read each frame
+  [BP3] x1, y1 = 100, 100           - Draw rectangle
+  [BP4] cv2.putText(...)            - Draw text
+
+Use Right_thumb_middle_swipe (F10) to step through!
+
+
+========================================
+FINAL STRUCTURE SHOULD LOOK LIKE:
+THIS IS EXAMPLE OF A REFERENCE 
+For this demo I use this to know what to do next
+========================================
+
+def main():
+    cap = cv2.VideoCapture(1)         
+    while True:
+        ret, frame = cap.read()        # <-- BREAKPOINT 1
+        if not ret:
+            break
+
+        # Draw rectangle                # <-- BREAKPOINT 2
+        cv2.rectangle(frame, (100, 100), (650, 600), (0, 255, 0), 2)
+
+        # Draw text                     # <-- BREAKPOINT 3
+        cv2.putText(frame, 'OpenCV Demo', (150, 300), cv2.FONT_HERSHEY_SIMPLEX, 2, (255, 255, 255), 2)
+        
+        cv2.imshow('frame', frame)
+        if cv2.waitKey(1) & 0xFF == ord('q'):
+            break
+    cap.release()
+    cv2.destroyAllWindows()
+
+
+========================================
+DEBUG WALKTHROUGH:
+========================================
+
+1. Set breakpoints at lines marked above (click left gutter in VS Code)
+2. Press F5 to start debugging
+3. Code stops at BREAKPOINT 1 (camera init)
+4. Use Right_thumb_middle_swipe gesture (or F10) to step to next line
+5. At BREAKPOINT 2 (frame read), step repeatedly to see frames update
+6. At BREAKPOINT 3 & 4, watch the drawing commands execute
+7. Press Continue (F5) to run freely, 'q' to quit
+
+TIP: Set breakpoint on cv2.rectangle line and step through
+     to see each frame being drawn one by one!

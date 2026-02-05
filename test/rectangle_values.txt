@@ -1,0 +1,16 @@
+Rectangle Dimensions
+====================
+
+Top-left corner:
+x1 = 100
+y1 = 100
+
+Bottom-right corner:
+x2 = 300
+y2 = 250
+
+Color (BGR):
+color = (0, 255, 0)  # Green
+
+Thickness:
+thickness = 2

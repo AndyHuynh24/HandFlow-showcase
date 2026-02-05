@@ -1,58 +1,30 @@
-#!/usr/bin/env python3
+# Copyright (c) 2026 Huynh Huy. All rights reserved.
+
 """
-OpenCV Demo - Video Loop with Drawing
-======================================
-
-Demo workflow:
-1. Set breakpoints on lines marked with # <-- BREAKPOINT
-2. Run debug (F5)
-3. Use Step Over (F10), Step Into (F11) to walk through
-4. Commit to git
-
-Press 'q' to quit the demo.
+OpenCV Demo - Run this to see rectangle and text drawing in action.
 """
 
 import cv2
-import time
+import numpy as np
 
+# Create a blank image (black background)
+frame = np.zeros((480, 640, 3), dtype=np.uint8)
 
-def main():
-    # ========================================
-    # FIELD 1: VIDEO CAPTURE LOOP
-    # ========================================
-    cap = cv2.VideoCapture(0)  # <-- BREAKPOINT: Camera init
-    cap.set(cv2.CAP_PROP_FRAME_WIDTH, 640)
-    cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 480)
+# ==============================================================================
+# Step 1: Draw Rectangle
+# ==============================================================================
+cv2.rectangle(frame, (100, 100), (300, 250), (0, 255, 0), 2)
+#                    top-left     bottom-right   color BGR   thickness
 
-    while True:
-        ret, frame = cap.read()  # <-- BREAKPOINT: Frame capture
-        if not ret:
-            break
+# ==============================================================================
+# Step 2: Draw Text
+# ==============================================================================
+cv2.putText(frame, 'Hello HandFlow', (120, 180), cv2.FONT_HERSHEY_SIMPLEX, 0.8, (255, 255, 255), 2)
+#                                    bottom-left                         scale  color BGR      thickness
 
-        # ========================================
-        # FIELD 2: DRAW RECTANGLE
-        # ========================================
-        x, y, w, h = 100, 100, 200, 150  # <-- BREAKPOINT: Inspect values
-        color = (0, 255, 0)  # Green in BGR
-        cv2.rectangle(frame, (x, y), (x + w, y + h), color, 2)
-
-        # ========================================
-        # FIELD 3: DRAW TEXT
-        # ========================================
-        text = "OpenCV Demo"  # <-- BREAKPOINT: Inspect text
-        position = (10, 30)
-        font = cv2.FONT_HERSHEY_SIMPLEX
-        cv2.putText(frame, text, position, font, 1.0, (255, 255, 255), 2)
-
-        # Show frame
-        cv2.imshow('Demo', frame)  # <-- BREAKPOINT: Before display
-
-        if cv2.waitKey(1) & 0xFF == ord('q'):
-            break
-
-    cap.release()
-    cv2.destroyAllWindows()
-
-
-if __name__ == "__main__":
-    main()  # <-- BREAKPOINT: Start here
+# ==============================================================================
+# Step 3: Show the result
+# ==============================================================================
+cv2.imshow('CV Demo', frame)
+cv2.waitKey(0)
+cv2.destroyAllWindows()

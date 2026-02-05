@@ -324,17 +324,20 @@ class ScreenOverlayMacroPad:
                     width=border_width
                 )
 
-                # Button label
+                # Button label - larger font, use full button width
                 cx = (x1 + x2) / 2
                 cy = (y1 + y2) / 2
                 label = self._button_labels[idx] if idx < len(self._button_labels) else f"Btn {idx+1}"
-                if len(label) > 12:
-                    label = label[:11] + "…"
+                if len(label) > 20:
+                    label = label[:19] + "…"
 
-                font_size = 12 if is_hovered else 11
+                font_size = 18 if is_hovered else 16
+                button_width = self._cell_width - 20  # Padding on sides
                 self._canvas.create_text(
                     cx, cy, text=label, fill=text_color,
-                    font=('Helvetica', font_size, 'bold' if is_hovered else 'normal')
+                    font=('Helvetica', font_size, 'bold' if is_hovered else 'normal'),
+                    width=button_width,  # Text wraps within button width
+                    justify='center'
                 )
 
                 # Button number
