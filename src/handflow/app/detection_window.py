@@ -48,7 +48,7 @@ _activity_token = None
 _caffeinate_process = None
 
 def disable_app_nap():
-    """Disable macOS App Nap using strongest available method."""
+    """Disable macOS App Nap and background throttling using multiple methods."""
     global _activity_token, _caffeinate_process
     if sys.platform != 'darwin':
         return
@@ -56,9 +56,6 @@ def disable_app_nap():
     # Method 1: PyObjC with NSActivityLatencyCritical (strongest flag)
     try:
         from Foundation import NSProcessInfo
-        # NSActivityLatencyCritical = 0xFF00000000 (prevents App Nap completely)
-        # NSActivityUserInitiated = 0x00FFFFFF (user-initiated, high priority)
-        # Combined for maximum effect
         NSActivityLatencyCritical = 0xFF00000000
         NSActivityUserInitiated = 0x00FFFFFF
         activity_options = NSActivityLatencyCritical | NSActivityUserInitiated
@@ -68,27 +65,28 @@ def disable_app_nap():
             activity_options,
             "HandFlow real-time gesture detection"
         )
+        # Prevent macOS from auto-terminating or sudden-terminating the process
+        process_info.disableAutomaticTermination_("HandFlow detection active")
+        process_info.disableSuddenTermination()
         print("[Detection] App Nap disabled (PyObjC NSActivityLatencyCritical)")
-        return  # Success, no need for fallback
     except ImportError:
-        print("[Detection] PyObjC not available, trying caffeinate fallback...")
+        print("[Detection] PyObjC not available")
     except Exception as e:
-        print(f"[Detection] PyObjC method failed: {e}, trying caffeinate fallback...")
+        print(f"[Detection] PyObjC method failed: {e}")
 
-    # Method 2: Fallback to caffeinate command (reliable but spawns subprocess)
+    # Method 2: ALWAYS run caffeinate alongside PyObjC for extra insurance
+    # -d: prevent display sleep, -i: prevent idle sleep,
+    # -m: prevent disk sleep, -s: prevent system sleep
     try:
         import subprocess
-        # caffeinate -i: prevent idle sleep (keeps process active)
-        # We run it as a subprocess that we'll kill on cleanup
         _caffeinate_process = subprocess.Popen(
-            ['caffeinate', '-i', '-w', str(os.getpid())],
+            ['caffeinate', '-dims', '-w', str(os.getpid())],
             stdout=subprocess.DEVNULL,
             stderr=subprocess.DEVNULL
         )
-        print("[Detection] App Nap disabled (caffeinate fallback)")
+        print("[Detection] caffeinate -dims running (anti-throttle)")
     except Exception as e:
-        print(f"[Detection] WARNING: Could not disable App Nap: {e}")
-        print("[Detection] App may be less responsive when window is not focused")
+        print(f"[Detection] WARNING: caffeinate failed: {e}")
 
 
 def enable_app_nap():
@@ -104,6 +102,8 @@ def enable_app_nap():
             from Foundation import NSProcessInfo
             process_info = NSProcessInfo.processInfo()
             process_info.endActivity_(_activity_token)
+            process_info.enableAutomaticTermination_("HandFlow detection active")
+            process_info.enableSuddenTermination()
             _activity_token = None
         except:
             pass
@@ -337,10 +337,10 @@ class DetectionWindow(ctk.CTkToplevel):
         self._recording_thread = threading.Thread(target=self._recording_loop, daemon=True)
         self._recording_thread.start()
 
-        # Use camera FPS (30) for recording, not target_fps (20) which is for gesture detection
-        self._recording_fps = 30
-        self.logger.info(f"[Recording] Started: {self._recording_filename} @ {self._recording_fps} FPS")
-        print(f"[Recording] Started: {self._recording_filename} @ {self._recording_fps} FPS")
+        # FPS will be measured from actual frame arrival rate for correct playback speed
+        self._recording_fps = None
+        self.logger.info(f"[Recording] Started: {self._recording_filename} (FPS will be measured)")
+        print(f"[Recording] Started: {self._recording_filename} (FPS will be measured)")
 
     def _recording_loop(self):
         """Recording thread - simple queue consumer with lower priority."""
@@ -358,25 +358,44 @@ class DetectionWindow(ctk.CTkToplevel):
             except:
                 pass
 
-        fps = self._recording_fps  # Use camera FPS (30) for correct playback speed
         fourcc = cv2.VideoWriter_fourcc(*'mp4v')
-        writer = None  # Initialize lazily with actual frame size
+        writer = None
+        fps = None
 
         frames_written = 0
+        buffered_frames = []
+        first_frame_time = None
+        CALIBRATION_FRAMES = 15  # Buffer this many to measure actual FPS
 
         while not self._recording_stop_event.is_set():
             try:
-                # Block with timeout so we can check stop event
                 frame = self._recording_queue.get(timeout=0.1)
+                now = time.time()
 
-                # Initialize writer with actual frame dimensions (full resolution)
+                if first_frame_time is None:
+                    first_frame_time = now
+
+                # Before writer is initialized, buffer frames to measure FPS
                 if writer is None:
-                    h, w = frame.shape[:2]
-                    writer = cv2.VideoWriter(self._recording_filename, fourcc, fps, (w, h))
-                    if not writer.isOpened():
-                        self.logger.error(f"[Recording] Failed to open video writer at {w}x{h}")
-                        return
-                    self.logger.info(f"[Recording] Writer initialized at {w}x{h} (full resolution)")
+                    buffered_frames.append(frame)
+                    if len(buffered_frames) >= CALIBRATION_FRAMES:
+                        elapsed = now - first_frame_time
+                        fps = len(buffered_frames) / elapsed if elapsed > 0.1 else 30.0
+                        fps = round(fps, 1)
+
+                        h, w = buffered_frames[0].shape[:2]
+                        writer = cv2.VideoWriter(self._recording_filename, fourcc, fps, (w, h))
+                        if not writer.isOpened():
+                            self.logger.error(f"[Recording] Failed to open video writer at {w}x{h}")
+                            return
+                        self.logger.info(f"[Recording] Writer initialized at {w}x{h}, measured FPS: {fps}")
+                        print(f"[Recording] Measured FPS: {fps}")
+
+                        for bf in buffered_frames:
+                            writer.write(bf)
+                            frames_written += 1
+                        buffered_frames = []
+                    continue
 
                 writer.write(frame)
                 frames_written += 1
@@ -384,18 +403,38 @@ class DetectionWindow(ctk.CTkToplevel):
             except queue.Empty:
                 continue
 
-        # Drain remaining frames
+        # Drain remaining frames from queue
         while not self._recording_queue.empty():
             try:
                 frame = self._recording_queue.get_nowait()
-                writer.write(frame)
-                frames_written += 1
-                self._recording_frame_count = frames_written
+                if writer is None:
+                    buffered_frames.append(frame)
+                else:
+                    writer.write(frame)
+                    frames_written += 1
             except queue.Empty:
                 break
 
-        writer.release()
-        self.logger.info(f"[Recording] Thread done, wrote {frames_written} frames")
+        # Handle case where recording stopped before calibration finished
+        if writer is None and buffered_frames:
+            elapsed = time.time() - first_frame_time if first_frame_time else 1.0
+            fps = len(buffered_frames) / elapsed if elapsed > 0.1 else 30.0
+            fps = round(fps, 1)
+
+            h, w = buffered_frames[0].shape[:2]
+            writer = cv2.VideoWriter(self._recording_filename, fourcc, fps, (w, h))
+            if writer.isOpened():
+                for bf in buffered_frames:
+                    writer.write(bf)
+                    frames_written += 1
+                self.logger.info(f"[Recording] Short recording - writer at {w}x{h}, measured FPS: {fps}")
+
+        self._recording_fps = fps or 30.0
+        self._recording_frame_count = frames_written
+
+        if writer:
+            writer.release()
+        self.logger.info(f"[Recording] Thread done, wrote {frames_written} frames at {fps} FPS")
 
     def _stop_recording(self):
         """Stop recording thread."""
@@ -560,10 +599,15 @@ class DetectionWindow(ctk.CTkToplevel):
                     if self.setting.camera.flip_vertical:
                         frame = cv2.flip(frame, 0)
 
-                    # Queue frame for recording (non-blocking, drops if full)
+                    # Queue frame for recording at Full HD (1920x1080)
                     if self._recording and self._recording_queue is not None:
                         try:
-                            self._recording_queue.put_nowait(frame.copy())
+                            h, w = frame.shape[:2]
+                            if w != 1920 or h != 1080:
+                                rec_frame = cv2.resize(frame, (1920, 1080))
+                            else:
+                                rec_frame = frame.copy()
+                            self._recording_queue.put_nowait(rec_frame)
                         except queue.Full:
                             pass  # Drop frame if queue full - keeps main loop fast
 
