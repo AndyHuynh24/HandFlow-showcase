@@ -3,7 +3,6 @@
 """
 OpenCV Drawing Demo - MacroPad Template Demo
 =============================================
-
 Simple OpenCV demo to demonstrate typing out code templates
 using MacroPad buttons & handgesture for quick coding.
 
@@ -22,7 +21,7 @@ def main():
         #Draw rect
         cv2.rectangle(frame, (100, 100), (650, 600), (0, 255, 0), 2)
         #                      top-left   bottom-right  color(BGR)  thickness
-         
+
         cv2.imshow('frame', frame)
         if cv2.waitKey(1) & 0xFF == ord('q'):
             break
