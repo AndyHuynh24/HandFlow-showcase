@@ -520,6 +520,7 @@ class GestureDetector:
         frame: np.ndarray,
         frame_small: np.ndarray = None,
         run_gesture_model: bool = True,
+        run_mediapipe: bool = True,
         delta_time: float = None,
         disable_drawing: bool = False
     ) -> Tuple[np.ndarray, dict]:
@@ -530,6 +531,7 @@ class GestureDetector:
             frame: BGR image from camera (full resolution for display)
             frame_small: Optional smaller BGR image for MediaPipe (faster processing)
             run_gesture_model: If False, skip TCN gesture inference (optimization)
+            run_mediapipe: If False, skip MediaPipe and reuse cached results (optimization)
             delta_time: Time since last frame in seconds (for FPS-invariant features)
             disable_drawing: If True, skip all drawing operations (for performance testing)
         """
@@ -540,19 +542,37 @@ class GestureDetector:
         if delta_time is not None and delta_time > 0:
             self._last_delta_time = delta_time
 
-        # Reset finger positions (will be updated if hands detected)
-        self._right_index_tip = None
-        self._left_index_tip = None
-
         # FPS calculation
         self._fps_counter += 1
-        elapsed = time.time() - self._fps_start_time
+        current_time = time.time()
+        elapsed = current_time - self._fps_start_time
         if elapsed > 1.0:
             self.current_fps = self._fps_counter / elapsed  # Loop FPS
             self._data_fps = self._data_fps_counter / elapsed  # Data collection FPS
             self._fps_counter = 0
             self._data_fps_counter = 0
-            self._fps_start_time = time.time()
+            self._fps_start_time = current_time
+
+        # Fast path: skip MediaPipe, reuse cached finger positions for smooth cursor
+        if not run_mediapipe:
+            self._fps_sample_times.append(current_time)
+            if len(self._fps_sample_times) >= 2:
+                time_span = self._fps_sample_times[-1] - self._fps_sample_times[0]
+                if time_span > 0:
+                    self._actual_fps = (len(self._fps_sample_times) - 1) / time_span
+            self._update_continuous_cursor()
+            image = frame
+            img_h, img_w = image.shape[:2]
+            fps_text = f"FPS: {self._data_fps:.0f}/{self._actual_fps:.0f}/{self._target_fps:.0f}"
+            if not self._data_rate_limit_enabled:
+                fps_text += " [UNCAPPED]"
+            cv2.putText(image, fps_text, (5, img_h - 8),
+                       cv2.FONT_HERSHEY_SIMPLEX, 0.35, (255, 255, 0), 1)
+            return image, {}
+
+        # Reset finger positions (will be updated if hands detected)
+        self._right_index_tip = None
+        self._left_index_tip = None
 
         # Get setting
         flip_h = self.setting.camera.flip_horizontal

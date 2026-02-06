@@ -71,7 +71,16 @@ BREAKPOINT SUMMARY (4 total):
   [BP4] cv2.putText(...)            - Draw text
 
 Use Right_thumb_middle_swipe (F10) to step through!
-
+cap = cv2.VideoCapture(0)                                                                                                                          
+while cap.isOpened():
+	ret, frame = cap.read()                                                                                                                        
+	if not ret:                                                                  
+		break
+	cv2.imshow('Frame', frame)
+      	if cv2.waitKey(1) & 0xFF == ord('q'):
+          		break
+cap.release()
+cv2.destroyAllWindows()
 
 ========================================
 FINAL STRUCTURE SHOULD LOOK LIKE:

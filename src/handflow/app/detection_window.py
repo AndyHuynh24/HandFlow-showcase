@@ -234,15 +234,19 @@ class DetectionWindow(ctk.CTkToplevel):
         config = load_config("config/config.yaml")
         self._target_fps = getattr(config.data, 'target_fps', 20.0)
         self._frame_duration = 1.0 / self._target_fps
+        self._mediapipe_interval = 1  # Run MediaPipe every frame (needed for full 20fps data rate)
         self._gesture_model_interval = 2  # Run gesture TCN model every 2 frames
-        self._aruco_interval = 2  # Run ArUco/MacroPad every 2 frames
+        self._aruco_interval = 3  # Run ArUco/MacroPad every 3 frames
         self._frame_count = 0
         self._last_detection_results = None  # Cache detection results
 
-        # Resolution for MediaPipe processing - use 16:9 to match training data
-        # 640x360 maintains aspect ratio while being lower resolution for speed
+        # Resolution for display - 16:9 to match training data
         self._mp_width = 640
         self._mp_height = 360
+
+        # Smaller resolution for MediaPipe processing (faster detection)
+        self._mp_process_width = 320
+        self._mp_process_height = 180
 
         # Pre-allocated buffer for RGB conversion (avoid allocation each frame)
         self._rgb_buffer = None
@@ -332,18 +336,16 @@ class DetectionWindow(ctk.CTkToplevel):
         self._recording_start_time = time.time()
         self._recording_frame_count = 0
         self._recording = True
+        self._recording_fps = 30.0  # Fixed FPS for constant-speed playback
 
         # Start recording thread
         self._recording_thread = threading.Thread(target=self._recording_loop, daemon=True)
         self._recording_thread.start()
-
-        # FPS will be measured from actual frame arrival rate for correct playback speed
-        self._recording_fps = None
-        self.logger.info(f"[Recording] Started: {self._recording_filename} (FPS will be measured)")
-        print(f"[Recording] Started: {self._recording_filename} (FPS will be measured)")
+        self.logger.info(f"[Recording] Started: {self._recording_filename} (fixed {self._recording_fps} FPS)")
+        print(f"[Recording] Started: {self._recording_filename} (fixed {self._recording_fps} FPS)")
 
     def _recording_loop(self):
-        """Recording thread - simple queue consumer with lower priority."""
+        """Recording thread - constant FPS using wall-clock timing for real-time playback."""
         # Set lower priority for recording thread (UTILITY class = background I/O)
         if sys.platform == 'darwin':
             try:
@@ -358,83 +360,65 @@ class DetectionWindow(ctk.CTkToplevel):
             except:
                 pass
 
+        RECORDING_FPS = self._recording_fps  # Fixed 30 FPS
+        frame_interval = 1.0 / RECORDING_FPS
         fourcc = cv2.VideoWriter_fourcc(*'mp4v')
         writer = None
-        fps = None
-
         frames_written = 0
-        buffered_frames = []
-        first_frame_time = None
-        CALIBRATION_FRAMES = 15  # Buffer this many to measure actual FPS
+        last_frame = None
+        next_frame_time = None  # Wall-clock deadline for next video frame
 
         while not self._recording_stop_event.is_set():
             try:
-                frame = self._recording_queue.get(timeout=0.1)
+                frame = self._recording_queue.get(timeout=0.05)
+                last_frame = frame
                 now = time.time()
 
-                if first_frame_time is None:
-                    first_frame_time = now
-
-                # Before writer is initialized, buffer frames to measure FPS
+                # Initialize writer on first frame
                 if writer is None:
-                    buffered_frames.append(frame)
-                    if len(buffered_frames) >= CALIBRATION_FRAMES:
-                        elapsed = now - first_frame_time
-                        fps = len(buffered_frames) / elapsed if elapsed > 0.1 else 30.0
-                        fps = round(fps, 1)
+                    h, w = frame.shape[:2]
+                    writer = cv2.VideoWriter(self._recording_filename, fourcc, RECORDING_FPS, (w, h))
+                    if not writer.isOpened():
+                        self.logger.error(f"[Recording] Failed to open video writer at {w}x{h}")
+                        return
+                    self.logger.info(f"[Recording] Writer initialized at {w}x{h}, fixed FPS: {RECORDING_FPS}")
+                    next_frame_time = now
 
-                        h, w = buffered_frames[0].shape[:2]
-                        writer = cv2.VideoWriter(self._recording_filename, fourcc, fps, (w, h))
-                        if not writer.isOpened():
-                            self.logger.error(f"[Recording] Failed to open video writer at {w}x{h}")
-                            return
-                        self.logger.info(f"[Recording] Writer initialized at {w}x{h}, measured FPS: {fps}")
-                        print(f"[Recording] Measured FPS: {fps}")
+                # Write frames to fill up to current wall-clock time
+                # - Processing faster than 30fps: only latest frame written per interval
+                # - Processing slower than 30fps: last frame duplicated to fill gaps
+                # Result: video always plays back at real-time speed
+                while next_frame_time <= now:
+                    writer.write(last_frame)
+                    frames_written += 1
+                    next_frame_time += frame_interval
 
-                        for bf in buffered_frames:
-                            writer.write(bf)
-                            frames_written += 1
-                        buffered_frames = []
-                    continue
-
-                writer.write(frame)
-                frames_written += 1
                 self._recording_frame_count = frames_written
+
             except queue.Empty:
+                # No new frame - duplicate last frame to fill time gaps
+                if last_frame is not None and writer is not None and next_frame_time is not None:
+                    now = time.time()
+                    while next_frame_time <= now:
+                        writer.write(last_frame)
+                        frames_written += 1
+                        next_frame_time += frame_interval
+                    self._recording_frame_count = frames_written
                 continue
 
-        # Drain remaining frames from queue
-        while not self._recording_queue.empty():
-            try:
-                frame = self._recording_queue.get_nowait()
-                if writer is None:
-                    buffered_frames.append(frame)
-                else:
-                    writer.write(frame)
-                    frames_written += 1
-            except queue.Empty:
-                break
+        # Fill final gap on stop
+        if last_frame is not None and writer is not None and next_frame_time is not None:
+            now = time.time()
+            while next_frame_time <= now:
+                writer.write(last_frame)
+                frames_written += 1
+                next_frame_time += frame_interval
 
-        # Handle case where recording stopped before calibration finished
-        if writer is None and buffered_frames:
-            elapsed = time.time() - first_frame_time if first_frame_time else 1.0
-            fps = len(buffered_frames) / elapsed if elapsed > 0.1 else 30.0
-            fps = round(fps, 1)
-
-            h, w = buffered_frames[0].shape[:2]
-            writer = cv2.VideoWriter(self._recording_filename, fourcc, fps, (w, h))
-            if writer.isOpened():
-                for bf in buffered_frames:
-                    writer.write(bf)
-                    frames_written += 1
-                self.logger.info(f"[Recording] Short recording - writer at {w}x{h}, measured FPS: {fps}")
-
-        self._recording_fps = fps or 30.0
         self._recording_frame_count = frames_written
 
         if writer:
             writer.release()
-        self.logger.info(f"[Recording] Thread done, wrote {frames_written} frames at {fps} FPS")
+        self.logger.info(f"[Recording] Thread done, wrote {frames_written} frames at {RECORDING_FPS} FPS")
 
     def _stop_recording(self):
         """Stop recording thread."""
@@ -593,14 +577,20 @@ class DetectionWindow(ctk.CTkToplevel):
                     delta_time = current_time - last_frame_time
                     last_frame_time = current_time
 
-                    # 1. Preprocessing (in-place flips, no copy needed yet)
-                    if self.setting.camera.flip_horizontal:
-                        frame = cv2.flip(frame, 1)
-                    if self.setting.camera.flip_vertical:
-                        frame = cv2.flip(frame, 0)
+                    self._frame_count += 1
 
-                    # Queue frame for recording at Full HD (1920x1080)
-                    if self._recording and self._recording_queue is not None:
+                    # 1. Preprocessing - flip and resize
+                    # When recording: flip full-res first, queue it, then resize
+                    # When not recording: resize first, then flip small frame (much faster)
+                    is_recording = self._recording and self._recording_queue is not None
+                    flip_h = self.setting.camera.flip_horizontal
+                    flip_v = self.setting.camera.flip_vertical
+
+                    if is_recording:
+                        if flip_h:
+                            frame = cv2.flip(frame, 1)
+                        if flip_v:
+                            frame = cv2.flip(frame, 0)
                         try:
                             h, w = frame.shape[:2]
                             if w != 1920 or h != 1080:
@@ -609,15 +599,22 @@ class DetectionWindow(ctk.CTkToplevel):
                                 rec_frame = frame.copy()
                             self._recording_queue.put_nowait(rec_frame)
                         except queue.Full:
-                            pass  # Drop frame if queue full - keeps main loop fast
+                            pass
 
-                    self._frame_count += 1
-
-                    # Resize to MediaPipe input size (640x360) - used for both processing AND display
-                    # This saves CPU: smaller image for color conversion, PIL, and CTkImage
-                    # CTkImage will scale up to window size (blurry but fast)
+                    # Resize to display size (640x360)
                     frame_small = cv2.resize(frame, (self._mp_width, self._mp_height), interpolation=cv2.INTER_NEAREST)
+
+                    # Flip on small frame when not recording (skip redundant full-res flip)
+                    if not is_recording:
+                        if flip_h:
+                            frame_small = cv2.flip(frame_small, 1)
+                        if flip_v:
+                            frame_small = cv2.flip(frame_small, 0)
+
                     h_small, w_small = frame_small.shape[:2]
+
+                    # Even smaller frame for MediaPipe processing (320x180)
+                    frame_mp = cv2.resize(frame_small, (self._mp_process_width, self._mp_process_height), interpolation=cv2.INTER_NEAREST)
 
                     # 2. ArUco/MacroPad Detection - every 2 frames
                     run_aruco = (
@@ -671,19 +668,25 @@ class DetectionWindow(ctk.CTkToplevel):
                     self.gesture_Detector.set_macropad_active(macropad_active)
 
                     # 5. Gesture Recognition
-                    # - MediaPipe runs EVERY frame (for smooth landmarks & proper data collection)
-                    # - Gesture TCN model runs every N frames (inference optimization)
-                    run_gesture_model = (self._frame_count % self._gesture_model_interval == 0)
+                    # - MediaPipe runs every N frames (biggest CPU cost ~15-30ms)
+                    # - Gesture TCN model runs only when MediaPipe ran (needs fresh keypoints)
+                    # - On skip frames, cached finger positions keep cursor smooth
+                    run_mediapipe = (self._frame_count % self._mediapipe_interval == 0) or (self._frame_count <= 1)
+                    run_gesture_model = run_mediapipe  # TCN only when we have new keypoints
 
-                    # Pass delta_time for FPS-invariant velocity features
-                    # process_frame draws on frame_small, which is also used for display
                     output, detections = self.gesture_Detector.process_frame(
-                        frame_small,  # Small res for both display and MediaPipe
-                        frame_small=None,  # Already small, no separate resize needed
-                        run_gesture_model=run_gesture_model,  # TCN inference every N frames
+                        frame_small,  # Display resolution (640x360)
+                        frame_small=frame_mp,  # Smaller frame for MediaPipe (320x180)
+                        run_gesture_model=run_gesture_model,
+                        run_mediapipe=run_mediapipe,
                         delta_time=delta_time,
-                        disable_drawing=self._disable_drawing  # Debug flag
+                        disable_drawing=self._disable_drawing
                     )
+
+                    # When MediaPipe was skipped, reuse last known detections
+                    # to prevent overlay flickering and gesture state loss
+                    if not run_mediapipe:
+                        detections = self._last_detections
 
                     # Track last gesture for touch optimization
                     self._last_detections = detections
