@@ -196,3 +196,5 @@ ipython_config.py
 # --------------------------------------------------
 RESUME_NOTES.md
 docs/
+*.mp4
+*.m4v
