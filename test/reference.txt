@@ -82,6 +82,9 @@ while cap.isOpened():
 cap.release()
 cv2.destroyAllWindows()
 
+
+
+
 ========================================
 FINAL STRUCTURE SHOULD LOOK LIKE:
 THIS IS EXAMPLE OF A REFERENCE 
