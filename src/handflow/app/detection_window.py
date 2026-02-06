@@ -222,6 +222,11 @@ class DetectionWindow(ctk.CTkToplevel):
         # Track last activation time to detect new activations reliably
         self._paper_feedback_last_activation_time: float = 0.0
 
+        # Gesture visual feedback overlay (non-touch gestures)
+        from handflow.app.gesture_feedback import GestureFeedback
+        self._gesture_feedback = GestureFeedback()
+        self._gesture_feedback_last_time: float = 0.0
+
         # State
         self._running = False
         self._thread = None
@@ -503,6 +508,10 @@ class DetectionWindow(ctk.CTkToplevel):
         # Clean up paper macropad feedback
         if self._paper_feedback:
             self._paper_feedback.destroy()
+
+        # Clean up gesture feedback
+        if self._gesture_feedback:
+            self._gesture_feedback.destroy()
 
         # Re-enable macOS App Nap
         enable_app_nap()
@@ -815,6 +824,9 @@ class DetectionWindow(ctk.CTkToplevel):
         # Process paper macropad feedback (only when screen overlay is NOT visible)
         self._process_paper_feedback()
 
+        # Process gesture feedback (non-touch gestures)
+        self._process_gesture_feedback()
+
         # Schedule next update (~20 FPS - sufficient for preview, saves CPU)
         if self._running:
             self.after(50, self._update_ui)
@@ -942,6 +954,24 @@ class DetectionWindow(ctk.CTkToplevel):
 
         # Process Tk events
         self._paper_feedback.update()
+
+    def _process_gesture_feedback(self):
+        """
+        Process gesture visual feedback (runs on main thread).
+
+        Shows macropad-button-style activation overlay when a non-touch gesture
+        is detected (after cooldown).
+        """
+        activated = self.gesture_Detector._last_activated_gesture
+        if activated is not None:
+            gesture_name, hand, timestamp = activated
+            # Only show if this is a new activation (not already shown)
+            if timestamp > self._gesture_feedback_last_time:
+                self._gesture_feedback.show_gesture(gesture_name, hand)
+                self._gesture_feedback_last_time = timestamp
+
+        # Process Tk events
+        self._gesture_feedback.update()
 
     def _is_point_in_expanded_region(self, point: Tuple[float, float], region: np.ndarray, margin_ratio: float = 0.25) -> bool:
         """

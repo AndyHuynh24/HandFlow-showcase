@@ -107,6 +107,10 @@ class GestureDetector:
         # Gesture history for display
         self.gesture_display_history = deque(maxlen=5)
 
+        # Last activated non-touch gesture (for visual feedback overlay)
+        # Tuple of (gesture_name, hand, timestamp) or None
+        self._last_activated_gesture = None
+
         # Track last detected gesture for continuous cursor movement
         # touch_hover and touch_hold need cursor updates EVERY frame, not just when model runs
         self._last_right_gesture = "none"
@@ -882,6 +886,9 @@ class GestureDetector:
         if gesture == "touch":
             self._click_at_touch(hand)
             return
+
+        # Signal non-touch gesture activation for visual feedback overlay
+        self._last_activated_gesture = (gesture, hand, time.time())
 
         # Execute mapped action for other gestures
         mapping_key = f"{hand}_{gesture}"
