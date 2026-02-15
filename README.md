@@ -75,12 +75,9 @@ HandFlow is an end-to-end gesture recognition system that turns a standard webca
 
 ## Architecture
 
-```
-Camera ──> MediaPipe Hands ──> Feature Engineer (96 features) ──> TCN Model ──> Action Executor
-  │              │                                                                     │
-  │              v                                                                     v
-  └──────> ArUco Detection ──> Screen Mapping / MacroPad Grid ──────────────────> OS Control
-```
+<p align="center">
+  <img src="Demo/architecture.png" alt="HandFlow System Architecture" width="800" />
+</p>
 
 ### Pipeline
 
@@ -163,8 +160,6 @@ The primary architecture is a **TCN with residual dilated causal convolutions**,
 | Classifier head | Dense(64, ReLU) &rarr; Dropout(0.1) &rarr; Dense(11, softmax) |
 | Model size | 2.7 MB (Keras) &rarr; 907 KB (TFLite, 66% reduction via quantization) |
 | Inference | ~25 FPS end-to-end on CPU (including MediaPipe + feature extraction + ArUco) |
-
-**Custom layer — `SoftMotionWeighting`:** A velocity gate that computes frame-to-frame motion magnitude, passes it through a sigmoid, and element-wise multiplies the input. This suppresses noisy features when the hand is idle and amplifies signal during active movement.
 
 **Alternative architectures** (all swappable via config): LSTM (2-layer, 128/64 units), GRU (2-layer, 128/64 units), 1D-CNN (3-layer with BatchNorm + MaxPooling), Transformer (2 blocks, 4-head attention with learned positional encoding).
 
