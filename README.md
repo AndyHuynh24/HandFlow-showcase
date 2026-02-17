@@ -19,6 +19,10 @@
 
 ---
 
+> **Note:** This repository is a technical walkthrough of HandFlow. The full source code is maintained in a private repository. If you're a recruiter or collaborator interested in reviewing the implementation, feel free to reach out — I'm happy to provide access.
+>
+> **GitHub:** [AndyHuynh24](https://github.com/AndyHuynh24) | **Email:** andy.hb.huynh@gmail.com
+
 HandFlow is an end-to-end gesture recognition system that turns a standard webcam into a touchless input device. It combines a lightweight temporal convolutional network with computer vision to support **free-space gesture control**, **virtual touchscreens**, and **printable paper macro pads** — all running at **real-time speed on CPU**.
 
 ## Demo
@@ -71,7 +75,7 @@ HandFlow is an end-to-end gesture recognition system that turns a standard webca
 
 **Paper Macro Pad** — Print a foldable A4 sheet with ArUco markers to create a physical 24-button macro pad (2 swappable sets of 12). Per-button action bindings configured through the GUI.
 
-**Real-Time Performance** — ~25 FPS on CPU with a 907 KB TFLite model. OneEuro filtering for smooth cursor tracking. FPS-invariant velocity features for consistent behavior across hardware.
+**Real-Time Performance** — ~25–30 FPS on CPU with a 907 KB TFLite model, capped at 20 FPS for consistent data feeding to the gesture model. OneEuro filtering for smooth cursor tracking. FPS-invariant velocity features for consistent behavior across hardware.
 
 ## Architecture
 
@@ -159,7 +163,7 @@ The primary architecture is a **TCN with residual dilated causal convolutions**,
 | Pooling | Concatenated global average + global max pooling (256-dim) |
 | Classifier head | Dense(64, ReLU) &rarr; Dropout(0.1) &rarr; Dense(11, softmax) |
 | Model size | 2.7 MB (Keras) &rarr; 907 KB (TFLite, 66% reduction via quantization) |
-| Inference | ~25 FPS end-to-end on CPU (including MediaPipe + feature extraction + ArUco) |
+| Inference | ~25–30 FPS end-to-end on CPU (including MediaPipe + feature extraction + ArUco), capped at 20 FPS for data feeding |
 
 **Alternative architectures** (all swappable via config): LSTM (2-layer, 128/64 units), GRU (2-layer, 128/64 units), 1D-CNN (3-layer with BatchNorm + MaxPooling), Transformer (2 blocks, 4-head attention with learned positional encoding).
 
@@ -281,65 +285,33 @@ HandFlow/
 └── main.py                            # Application entry point
 ```
 
-## Getting Started
+## Engineering Highlights
 
-### Prerequisites
+### Macro Pad Prototyping — 15+ Design Iterations
 
-- Python 3.9+
-- Webcam
-- macOS, Linux, or Windows
-- (Optional) Printed ArUco markers for screen calibration / macro pad
+The paper macro pad required extensive physical prototyping to find the optimal marker arrangement. Over 15 prototypes were designed, printed, and tested to balance competing constraints:
 
-### Installation
+- **Marker placement vs. button density** — Maximizing the number of usable buttons while keeping enough ArUco markers visible for reliable detection at varying angles and distances.
+- **Hand occlusion tolerance** — During normal use, the user's hand covers parts of the sheet. Marker positions were iterated to ensure that at least enough markers remain visible for accurate grid reconstruction, even when multiple buttons are pressed in sequence.
+- **Origami-inspired foldable design** — The final A4 layout folds into a triangular prism with 3 faces of 8 buttons each (24 buttons total), inspired by origami folding techniques. The prism form factor keeps one active face angled toward the camera at all times, while allowing the user to rotate to a different set by simply flipping the prism.
+- **Camera angle robustness** — Tested across different webcam heights, tilt angles, and lighting conditions to ensure consistent detection without requiring precise camera placement.
 
-```bash
-git clone https://github.com/AndyHuynh24/HandFlow.git
-cd HandFlow
+### Marker Occlusion Recovery Algorithm
 
-python -m venv venv
-source venv/bin/activate  # Windows: venv\Scripts\activate
+A core engineering challenge was maintaining stable spatial mapping when markers are partially or fully occluded by the user's hand. The detection pipeline uses an 8-marker layout (4 corners + 4 edge midpoints, with fallback bottom-corner markers) and implements a multi-stage recovery strategy:
 
-pip install -e .
-```
+1. **Geometric estimation from visible markers** — When a marker is occluded, its position is estimated using the known spatial relationships between all markers. For example, a missing corner can be reconstructed from adjacent edge midpoints and the opposite corner via vector arithmetic.
+2. **Cached position fallback** — If too few markers are visible for geometric estimation, the system falls back to cached positions from recent frames, maintaining continuity during brief occlusions.
+3. **Perspective-aware grid subdivision** — The recovered 4-corner detection region is subdivided into the button grid using perspective-correct interpolation, ensuring buttons remain accurately mapped even under partial homography distortion.
 
-### Usage
+This approach enables reliable button detection even when 3-4 out of 8 markers are simultaneously occluded — a common scenario during active use.
 
-```bash
-# Launch the GUI application
-python main.py
+## Contact
 
-# Or via CLI
-python -m handflow
-```
+This repository serves as a technical walkthrough. The full source code is in a private repository. If you're interested in collaborating, discussing the implementation, or reviewing the codebase, feel free to reach out:
 
-### Training
-
-```bash
-# Collect gesture data
-python scripts/collect_data.py
-
-# Preprocess collected data
-python scripts/dataset.py
-
-# Train a model
-python scripts/train.py --architecture tcn --epochs 100
-
-# Resume from checkpoint with adjusted learning rate
-python scripts/train.py --resume models/hand_action.keras --lr 0.00001 --epochs 50
-
-# Export to TFLite
-python scripts/export.py --input models/hand_action.keras
-```
-
-### Benchmarking
-
-```bash
-# Compare all architectures
-python scripts/benchmark_inference.py --iterations 500 --include-tflite
-
-# Full pipeline benchmark (MediaPipe + features + model + ArUco)
-python scripts/benchmark_tflite.py --runs 200
-```
+- **GitHub:** [AndyHuynh24](https://github.com/AndyHuynh24)
+- **Email:** andy.hb.huynh@gmail.com
 
 ## Tech Stack
 
