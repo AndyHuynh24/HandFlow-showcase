@@ -59,7 +59,7 @@ HandFlow is an end-to-end gesture recognition system that turns a standard webca
     <td align="center">
       <b>24-Button Paper Macro Pad</b><br/>
       <!-- TODO: Add demo gif/video showing the printed paper macropad in action -->
-      <i>Print a foldable A4 sheet with ArUco markers — 2 sets of 12 buttons each</i>
+      <i>Print a foldable A4 sheet with ArUco markers — 3 sets of 8 buttons each</i>
       <img src="Demo/24buttonmacropad.gif" width="400" />
     </td>
   </tr>
@@ -73,7 +73,7 @@ HandFlow is an end-to-end gesture recognition system that turns a standard webca
 
 **Screen Macro Pad** — 12-button on-screen macro pad overlay with ArUco markers for camera-based detection. Each button maps to custom keyboard shortcuts, app launches, or action sequences.
 
-**Paper Macro Pad** — Print a foldable A4 sheet with ArUco markers to create a physical 24-button macro pad (2 swappable sets of 12). Per-button action bindings configured through the GUI.
+**Paper Macro Pad** — Print a foldable A4 sheet with ArUco markers that folds into a triangular prism with 3 faces of 8 buttons each (24 buttons total). Per-button action bindings configured through the GUI.
 
 **Real-Time Performance** — ~25–30 FPS on CPU with a 907 KB TFLite model, capped at 20 FPS for consistent data feeding to the gesture model. OneEuro filtering for smooth cursor tracking. FPS-invariant velocity features for consistent behavior across hardware.
 
