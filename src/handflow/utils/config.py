@@ -97,9 +97,7 @@ class AugmentationConfig(BaseModel):
     landmark_dropout_mode: str = "whole" # "whole" | "fingertips"
     max_depth_delta: float = 0.08          # clamp z distortion
 
-    # -------------------------------------------------
     # Temporal & sensor-level augmentations 
-    # -------------------------------------------------
 
     # Gaussian noise (sensor jitter)
     noise_prob: float = 0.6
@@ -113,9 +111,7 @@ class AugmentationConfig(BaseModel):
     dropout_prob: float = 0.25
     dropout_rate: float = 0.1  
 
-    # -------------------------------------------------
     # Global geometric transforms 
-    # -------------------------------------------------
 
     # Uniform scaling (camera distance variation)
     scale_prob: float = 0.35
@@ -125,9 +121,7 @@ class AugmentationConfig(BaseModel):
     rotation_prob: float = 0.25
     rotation_range: tuple = (8,8)  # degrees
 
-    # -------------------------------------------------
     # Z-axis depth variation (MediaPipe-realistic)
-    # -------------------------------------------------
 
     # Global depth scaling (hand closer / farther)
     z_scale_prob: float = 0.4

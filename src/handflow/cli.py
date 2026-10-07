@@ -42,7 +42,7 @@ def train(
         actions = cfg.left_hand_gestures
         output_path = Path(cfg.paths.models_dir) / "left_action.h5"
 
-    click.echo(f"📊 Loading data from {data_path}")
+    click.echo(f"Loading data from {data_path}")
     sequences, labels = load_data(data_path, actions, cfg.model.sequence_length)
     click.echo(f"   Found {len(sequences)} sequences")
 
@@ -53,17 +53,17 @@ def train(
         sequences, labels, test_size=cfg.training.validation_split, random_state=42
     )
 
-    click.echo(f"🏗️ Building {architecture.upper()} model")
+    click.echo(f"Building {architecture.upper()} model")
     model = build_model(cfg)
 
-    click.echo(f"🚀 Training for {epochs} epochs")
+    click.echo(f"Training for {epochs} epochs")
     trainer = Trainer(cfg, model, experiment_name=experiment or f"handflow-{hand}")
     trainer.train(x_train, y_train, x_val, y_val)
 
-    click.echo(f"💾 Saving model to {output_path}")
+    click.echo(f"Saving model to {output_path}")
     trainer.save(output_path)
 
-    click.echo("✅ Training complete!")
+    click.echo("Training complete!")
 
 
 @main.command()
@@ -82,10 +82,10 @@ def export(model_path: str, output: str | None) -> None:
     else:
         output = Path(output)
 
-    click.echo(f"📦 Loading model: {model_path}")
+    click.echo(f"Loading model: {model_path}")
     model = tf.keras.models.load_model(str(model_path))
 
-    click.echo("🔧 Converting to TFLite (quantized)")
+    click.echo("Converting to TFLite (quantized)")
     converter = tf.lite.TFLiteConverter.from_keras_model(model)
     converter.optimizations = [tf.lite.Optimize.DEFAULT]
     tflite_model = converter.convert()
@@ -96,7 +96,7 @@ def export(model_path: str, output: str | None) -> None:
     original_size = model_path.stat().st_size / 1024 / 1024
     new_size = output.stat().st_size / 1024 / 1024
 
-    click.echo(f"✅ Exported to: {output}")
+    click.echo(f"Exported to: {output}")
     click.echo(f"   Original: {original_size:.2f} MB → Exported: {new_size:.2f} MB")
     click.echo(f"   Size reduction: {(1 - new_size/original_size)*100:.0f}%")
 
@@ -111,7 +111,7 @@ def info(config: str | None) -> None:
 
     cfg = load_config(config)
 
-    click.echo("🖐️ HandFlow Configuration")
+    click.echo("HandFlow Configuration")
     click.echo("=" * 40)
     click.echo(f"Version: {__version__}")
     click.echo(f"Python: {sys.version}")

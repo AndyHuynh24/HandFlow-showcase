@@ -1,4 +1,4 @@
-"""Knuckle MacroPad — turns palm-up hand finger segments into touchable buttons."""
+"""Knuckle MacroPad - turns palm-up hand finger segments into touchable buttons."""
 
 import time
 import cv2
@@ -60,7 +60,7 @@ class KnuckleMacroPad:
         self._last_activated_idx = None
         self._last_activated_time = 0.0
 
-        self.logger.info("[KnuckleMacroPad] Initialized — 7 buttons per hand (index + middle + palm)")
+        self.logger.info("[KnuckleMacroPad] Initialized - 7 buttons per hand (index + middle + palm)")
 
     def _get_xy(self, kp, landmark_id):
         """Get (x, y) from flattened keypoints array (21*4)."""
@@ -182,7 +182,7 @@ class KnuckleMacroPad:
 
     def _point_in_rotated_rect(self, px, py, corners):
         """Check if point (px, py) is inside a rotated rectangle defined by 4 corners.
-        Works regardless of winding order — all cross products must have the same sign.
+        Works regardless of winding order - all cross products must have the same sign.
         """
         n = len(corners)
         signs = []

@@ -7,9 +7,7 @@ from typing import TYPE_CHECKING
 if TYPE_CHECKING:
     from handflow.utils.config import Config
 
-# -------------------------------------------------
 # Landmark definitions
-# -------------------------------------------------
 WRIST_IDX = 0
 
 THUMB_INDICES  = [1, 2, 3, 4]
@@ -29,9 +27,7 @@ class SequenceAugmenter:
     def __init__(self, config: Config | None = None) -> None:
         self.config = config
 
-    # -------------------------------------------------
     # Public API
-    # -------------------------------------------------
 
     def augment(self, sequence: np.ndarray) -> np.ndarray:
         if not self.config.augmentation.enabled:
@@ -77,9 +73,7 @@ class SequenceAugmenter:
     def augment_batch(self, batch: np.ndarray) -> np.ndarray:
         return np.asarray([self.augment(seq) for seq in batch])
 
-    # -------------------------------------------------
     # Core augmentations
-    # -------------------------------------------------
 
     def _motion_energy(self, sequence: np.ndarray) -> float:
         """Estimate how much motion exists in the sequence."""
@@ -181,9 +175,7 @@ class SequenceAugmenter:
 
         return result
 
-    # -------------------------------------------------
     # Depth augmentations
-    # -------------------------------------------------
 
     def _z_scale(self, sequence: np.ndarray) -> np.ndarray:
         factor = np.random.uniform(*self.config.augmentation.z_scale_range)
@@ -254,9 +246,7 @@ class SequenceAugmenter:
 
         return result
 
-    # -------------------------------------------------
     # Dataset expansion
-    # -------------------------------------------------
 
     def generate_variants(self, sequence: np.ndarray, n_variants: int = 9) -> list[np.ndarray]:
         return [self.augment(sequence) for _ in range(n_variants)]

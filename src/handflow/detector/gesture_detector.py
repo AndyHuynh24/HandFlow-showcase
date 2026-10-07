@@ -712,11 +712,11 @@ class GestureDetector:
             self._end_drag()
             return
 
-        # Capture gestures — no longer used for capture (pointyclick triggers it)
+        # Capture gestures - no longer used for capture (pointyclick triggers it)
         if gesture in ("capture_hold", "capture_touch", "capture_release"):
             return
 
-        # Thumb desktop switch — temporarily disabled
+        # Thumb desktop switch - temporarily disabled
         if gesture in ("thumb_touch", "thumb_hold", "thumb_release"):
             return
 
@@ -768,7 +768,7 @@ class GestureDetector:
             self.start_capture()
 
         # Signal non-touch gesture activation for visual feedback overlay
-        # Skip pointyclick — too sensitive for live demo
+        # Skip pointyclick - too sensitive for live demo
         if gesture != "pointyclick":
             self._last_activated_gesture = (gesture, hand, time.time())
 
@@ -787,7 +787,7 @@ class GestureDetector:
                     self.executor.execute_sequence(valid_actions)
 
     def start_capture(self):
-        """Start capture — called when pointyclick is detected. Records start position."""
+        """Start capture - called when pointyclick is detected. Records start position."""
         import time as _t
         if _t.time() < self._cap_cooldown_until:
             return
@@ -801,7 +801,7 @@ class GestureDetector:
             self._cap_complete = False
 
     def end_capture(self):
-        """End capture — called by spacebar."""
+        """End capture - called by spacebar."""
         if self._cap_state == "holding":
             if self._right_index_tip:
                 self._cap_end = self._right_index_tip
@@ -842,7 +842,7 @@ class GestureDetector:
             self._thumb_hold_count = 0
 
     def _draw_prob_bars(self, image: np.ndarray, right_active: bool, left_active: bool) -> np.ndarray:
-        """Draw probability visualization bars — auto-scales to fit any number of classes."""
+        """Draw probability visualization bars - auto-scales to fit any number of classes."""
         h, w, _ = image.shape
         n_classes = len(self.gesture_classes)
 

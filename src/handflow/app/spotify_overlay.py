@@ -1,4 +1,4 @@
-"""Spotify overlay — shows current track with playback controls."""
+"""Spotify overlay - shows current track with playback controls."""
 
 import subprocess
 import sys

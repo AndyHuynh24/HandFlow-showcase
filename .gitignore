@@ -39,8 +39,6 @@ wandb/
 recordings/
 captures/
 
-# Claude
-.claude/
 
 # Temp
 tmp/

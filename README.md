@@ -18,7 +18,7 @@
 
 ---
 
-HandFlow is an end-to-end gesture recognition system that turns a standard webcam into a touchless input device. It combines a lightweight temporal convolutional network with computer vision to support **free-space gesture control**, **virtual touchscreens**, and **printable paper macro pads** — all running at **real-time speed on CPU**.
+HandFlow is an end-to-end gesture recognition system that turns a standard webcam into a touchless input device. It combines a lightweight temporal convolutional network with computer vision to support **free-space gesture control**, **virtual touchscreens**, and **printable paper macro pads** - all running at **real-time speed on CPU**.
 
 ## Demo
 
@@ -35,7 +35,7 @@ HandFlow is an end-to-end gesture recognition system that turns a standard webca
 </p>
 
 
-<p align="center"><i>*This is a MacBook — not a touchscreen laptop. The paper macro pad is an A4 printed paper, not connected to the laptop in any way. All connection and computation are done via camera tracking.</i></p>
+<p align="center"><i>*This is a MacBook - not a touchscreen laptop. The paper macro pad is an A4 printed paper, not connected to the laptop in any way. All connection and computation are done via camera tracking.</i></p>
 
 ### V1 Key Features
 
@@ -48,7 +48,7 @@ HandFlow is an end-to-end gesture recognition system that turns a standard webca
     </td>
     <td align="center">
       <b>Free-Space Hand Gestures</b><br/>
-      <i>7 hand gestures for touchless computer control — swipe, click, scroll, zoom, and more</i></br>
+      <i>7 hand gestures for touchless computer control - swipe, click, scroll, zoom, and more</i></br>
       <img src="Demo/7handgestures.gif" width="400" />
     </td>
   </tr>
@@ -60,7 +60,7 @@ HandFlow is an end-to-end gesture recognition system that turns a standard webca
     </td>
     <td align="center">
       <b>24-Button Paper Macro Pad</b><br/>
-      <i>Print a foldable A4 sheet with ArUco markers — 3 sets of 8 buttons each</i>
+      <i>Print a foldable A4 sheet with ArUco markers - 3 sets of 8 buttons each</i>
       <img src="Demo/24buttonmacropad.gif" width="400" />
     </td>
   </tr>
@@ -107,11 +107,11 @@ HandFlow is an end-to-end gesture recognition system that turns a standard webca
 ### Pipeline
 
 1. **MediaPipe Hands** extracts 21 3D hand landmarks per frame (63 raw coordinates) at up to 2 hands simultaneously, configured with detection confidence 0.5 and tracking confidence 0.3
-2. **Feature Engineer** transforms the raw 84-dimensional keypoints (21 landmarks x 4 values: x, y, z, visibility) into a 96-dimensional feature vector per frame — including wrist-normalized positions (63), inter-finger distances (5), absolute positions for screen mapping (9), FPS-normalized velocities (9), PIP joint bending angles (5), pinch dynamics (3), and thumb posture (2)
+2. **Feature Engineer** transforms the raw 84-dimensional keypoints (21 landmarks x 4 values: x, y, z, visibility) into a 96-dimensional feature vector per frame - including wrist-normalized positions (63), inter-finger distances (5), absolute positions for screen mapping (9), FPS-normalized velocities (9), PIP joint bending angles (5), pinch dynamics (3), and thumb posture (2)
 3. **TCN Model** takes a sliding window of 12 consecutive feature frames (~600 ms at 20 FPS) and classifies into one of 17 gesture classes
 4. **Action Executor** dispatches the predicted gesture to OS-level actions (keyboard shortcuts, mouse control, app launches) with per-hand and per-gesture configurable action chains (up to 10 actions per gesture)
 
-### Model — Temporal Convolutional Network (TCN)
+### Model - Temporal Convolutional Network (TCN)
 
 The primary architecture is a **TCN with residual dilated causal convolutions**, designed for low-latency temporal pattern recognition on CPU.
 
@@ -147,7 +147,7 @@ The primary architecture is a **TCN with residual dilated causal convolutions**,
                      ▼
 ┌─────────────────────────────────────────────────┐
 │         Residual Block (dilation=4)             │
-│    (same structure, RF = 13 — full window)      │
+│    (same structure, RF = 13 - full window)      │
 │           + residual connection → ReLU          │
 └─────────┬──────────────────────────┬────────────┘
           │                          │
@@ -176,7 +176,7 @@ The primary architecture is a **TCN with residual dilated causal convolutions**,
 
 | Spec | Details |
 |------|---------|
-| Input shape | `(12, 96)` — 12-frame window x 96 features |
+| Input shape | `(12, 96)` - 12-frame window x 96 features |
 | 1x1 projection | Projects 96 input features to 128 channels |
 | Temporal blocks | 3 residual blocks with dilations `[1, 2, 4]` and kernel size 3 |
 | Residual block | Dilated Conv1D &rarr; BatchNorm &rarr; ReLU &rarr; 1x1 Conv1D &rarr; BatchNorm &rarr; Dropout &rarr; residual add &rarr; ReLU |
@@ -208,14 +208,14 @@ Online geometric augmentation applied during training to improve generalization 
 | Augmentation | Probability | Details |
 |--------------|-------------|---------|
 | Gaussian noise | 40% | Motion-adaptive (reduced when hand is static), capped per-frame jitter |
-| Uniform scaling | 20% | Scale range [0.9, 1.1] — simulates hand distance variation |
-| 2D rotation | 15% | [-8, 8] degrees — simulates wrist rotation |
-| Z-axis scaling | 30% | [0.85, 1.15] — simulates depth sensor variation |
-| Z-axis shift | 30% | [-0.08, 0.08] — simulates camera depth offset |
-| Z proportional | 25% | [0.85, 1.15] — scales fingertip-to-wrist depth |
-| Z finger length | 25% | [0.9, 1.1] — simulates hand size variation per finger |
+| Uniform scaling | 20% | Scale range [0.9, 1.1] - simulates hand distance variation |
+| 2D rotation | 15% | [-8, 8] degrees - simulates wrist rotation |
+| Z-axis scaling | 30% | [0.85, 1.15] - simulates depth sensor variation |
+| Z-axis shift | 30% | [-0.08, 0.08] - simulates camera depth offset |
+| Z proportional | 25% | [0.85, 1.15] - scales fingertip-to-wrist depth |
+| Z finger length | 25% | [0.9, 1.1] - simulates hand size variation per finger |
 | Z noise | 40% | Depth-specific Gaussian noise (std=0.004) |
-| Hand tilt | 20% | [-12, 12] degrees — rotates around Y-Z plane (wrist-relative) |
+| Hand tilt | 20% | [-12, 12] degrees - rotates around Y-Z plane (wrist-relative) |
 | Landmark dropout | 15% | Drops whole landmarks or fingertips to simulate occlusion |
 
 ### Feature Engineering (96 dimensions)
@@ -308,24 +308,24 @@ HandFlow/
 
 ## Engineering Highlights
 
-### Macro Pad Prototyping — 15+ Design Iterations
+### Macro Pad Prototyping - 15+ Design Iterations
 
 The paper macro pad required extensive physical prototyping to find the optimal marker arrangement. Over 15 prototypes were designed, printed, and tested to balance competing constraints:
 
-- **Marker placement vs. button density** — Maximizing the number of usable buttons while keeping enough ArUco markers visible for reliable detection at varying angles and distances.
-- **Hand occlusion tolerance** — During normal use, the user's hand covers parts of the sheet. Marker positions were iterated to ensure that at least enough markers remain visible for accurate grid reconstruction, even when multiple buttons are pressed in sequence.
-- **Origami-inspired foldable design** — The final A4 layout folds into a triangular prism with 3 faces of 8 buttons each (24 buttons total), inspired by origami folding techniques. The prism form factor keeps one active face angled toward the camera at all times, while allowing the user to rotate to a different set by simply flipping the prism.
-- **Camera angle robustness** — Tested across different webcam heights, tilt angles, and lighting conditions to ensure consistent detection without requiring precise camera placement.
+- **Marker placement vs. button density** - Maximizing the number of usable buttons while keeping enough ArUco markers visible for reliable detection at varying angles and distances.
+- **Hand occlusion tolerance** - During normal use, the user's hand covers parts of the sheet. Marker positions were iterated to ensure that at least enough markers remain visible for accurate grid reconstruction, even when multiple buttons are pressed in sequence.
+- **Origami-inspired foldable design** - The final A4 layout folds into a triangular prism with 3 faces of 8 buttons each (24 buttons total), inspired by origami folding techniques. The prism form factor keeps one active face angled toward the camera at all times, while allowing the user to rotate to a different set by simply flipping the prism.
+- **Camera angle robustness** - Tested across different webcam heights, tilt angles, and lighting conditions to ensure consistent detection without requiring precise camera placement.
 
 ### Marker Occlusion Recovery Algorithm
 
 A core engineering challenge was maintaining stable spatial mapping when markers are partially or fully occluded by the user's hand. The detection pipeline uses an 8-marker layout (4 corners + 4 edge midpoints, with fallback bottom-corner markers) and implements a multi-stage recovery strategy:
 
-1. **Geometric estimation from visible markers** — When a marker is occluded, its position is estimated using the known spatial relationships between all markers. For example, a missing corner can be reconstructed from adjacent edge midpoints and the opposite corner via vector arithmetic.
-2. **Cached position fallback** — If too few markers are visible for geometric estimation, the system falls back to cached positions from recent frames, maintaining continuity during brief occlusions.
-3. **Perspective-aware grid subdivision** — The recovered 4-corner detection region is subdivided into the button grid using perspective-correct interpolation, ensuring buttons remain accurately mapped even under partial homography distortion.
+1. **Geometric estimation from visible markers** - When a marker is occluded, its position is estimated using the known spatial relationships between all markers. For example, a missing corner can be reconstructed from adjacent edge midpoints and the opposite corner via vector arithmetic.
+2. **Cached position fallback** - If too few markers are visible for geometric estimation, the system falls back to cached positions from recent frames, maintaining continuity during brief occlusions.
+3. **Perspective-aware grid subdivision** - The recovered 4-corner detection region is subdivided into the button grid using perspective-correct interpolation, ensuring buttons remain accurately mapped even under partial homography distortion.
 
-This approach enables reliable button detection even when 3-4 out of 8 markers are simultaneously occluded — a common scenario during active use.
+This approach enables reliable button detection even when 3-4 out of 8 markers are simultaneously occluded - a common scenario during active use.
 
 ## Tech Stack
 
@@ -347,6 +347,6 @@ This project is proprietary. No part of this codebase may be reproduced, distrib
 
 ## Acknowledgments
 
-- [MediaPipe](https://mediapipe.dev/) — hand landmark detection
-- [OpenCV](https://opencv.org/) — ArUco markers and image processing
-- [Weights & Biases](https://wandb.ai/) — experiment tracking
+- [MediaPipe](https://mediapipe.dev/) - hand landmark detection
+- [OpenCV](https://opencv.org/) - ArUco markers and image processing
+- [Weights & Biases](https://wandb.ai/) - experiment tracking

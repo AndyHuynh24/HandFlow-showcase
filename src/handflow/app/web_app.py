@@ -1,4 +1,4 @@
-"""HandFlow Web UI — NiceGUI-powered configuration interface."""
+"""HandFlow Web UI - NiceGUI-powered configuration interface."""
 
 import sys
 import os
@@ -8,7 +8,7 @@ from typing import Optional, List
 
 from nicegui import ui, app
 
-# ── Path Setup ──────────────────────────────────────────
+# Path Setup
 ROOT = Path(__file__).resolve().parent.parent.parent.parent
 _src = str(ROOT / "src")
 if _src not in sys.path:
@@ -21,7 +21,7 @@ from handflow.actions import ActionExecutor
 
 SETTING_PATH = "config/handflow_setting.yaml"
 
-# ── Action Types ────────────────────────────────────────
+# Action Types
 try:
     _raw = ActionExecutor.get_available_actions()
     ACTION_NAMES: List[str] = [a[0] for a in _raw]
@@ -32,12 +32,12 @@ except Exception:
     ACTION_TYPE_MAP = {"None": "none"}
     TYPE_NAME_MAP = {"none": "None"}
 
-# ── Global State ────────────────────────────────────────
+# Global State
 setting: Optional[Setting] = None
 detection_proc: Optional[subprocess.Popen] = None
 detection_running: bool = False
 
-# ── Theme ───────────────────────────────────────────────
+# Theme
 CUSTOM_CSS = """
 @import url('https://fonts.googleapis.com/css2?family=DM+Sans:ital,wght@0,400;0,500;0,600;0,700&family=JetBrains+Mono:wght@400;500&display=swap');
 
@@ -382,7 +382,7 @@ def _one_action_row(container, actions, idx, action, sync_fn):
 
 
 # ════════════════════════════════════════════════════════
-#  Page 1 — Gestures
+#  Page 1 - Gestures
 # ════════════════════════════════════════════════════════
 
 def build_gestures_page():
@@ -449,7 +449,7 @@ def _gesture_card(s, gesture_name):
 
 
 # ════════════════════════════════════════════════════════
-#  Page 2 — Macro Pad
+#  Page 2 - Macro Pad
 # ════════════════════════════════════════════════════════
 
 def build_macropad_page():
@@ -468,7 +468,7 @@ def build_macropad_page():
     _build_screen_overlay_section(s)
 
 
-# ── Paper Macro Pad ─────────────────────────────────────
+# Paper Macro Pad
 
 def _build_paper_macropad_section(s):
     with ui.card().classes("w-full s-card"):
@@ -542,7 +542,7 @@ def _refresh_paper_grid(grid_box):
                     _pad_cell(active, idx, btn, grid_box, "paper")
 
 
-# ── Screen Overlay Macro Pad ────────────────────────────
+# Screen Overlay Macro Pad
 
 def _build_screen_overlay_section(s):
     with ui.card().classes("w-full s-card"):
@@ -709,7 +709,7 @@ def _delete_set(set_select, grid_box):
 
 
 # ════════════════════════════════════════════════════════
-#  Page 3 — Knuckle Pad
+#  Page 3 - Knuckle Pad
 # ════════════════════════════════════════════════════════
 
 def build_knuckle_page():
@@ -811,7 +811,7 @@ def _build_hand_diagram():
 
 
 def _edit_knuckle_button(idx: int, button):
-    """Edit knuckle button actions — same dialog as macropad buttons."""
+    """Edit knuckle button actions - same dialog as macropad buttons."""
     knuckle_btns = getattr(setting, 'knuckle_macropad_buttons', {})
     working = list(button.get_actions())
 
@@ -819,7 +819,7 @@ def _edit_knuckle_button(idx: int, button):
     btn_name = names[idx] if idx < len(names) else f"Button {idx + 1}"
 
     with ui.dialog() as dlg, ui.card().classes("w-[660px] s-card"):
-        ui.label(f"Knuckle {idx + 1} — {btn_name}").classes("t-section")
+        ui.label(f"Knuckle {idx + 1} - {btn_name}").classes("t-section")
 
         label_input = ui.input(label="Button Label", value=button.label or "",
                                placeholder=btn_name).props("outlined dense").classes("w-full mt-3")
@@ -864,7 +864,7 @@ def _save_knuckle():
 
 
 # ════════════════════════════════════════════════════════
-#  Page 4 — Calibration
+#  Page 4 - Calibration
 # ════════════════════════════════════════════════════════
 
 def build_calibration_page():
@@ -882,7 +882,7 @@ def build_calibration_page():
 
     with ui.card().classes("w-full s-card"):
         with ui.row().classes("gap-8 w-full"):
-            # Steps — left side
+            # Steps - left side
             with ui.column().classes("gap-1 flex-1"):
                 ui.label("Setup").classes("t-section mb-1")
                 for i, step in enumerate([
@@ -895,7 +895,7 @@ def build_calibration_page():
                         ui.label(f"{i}.").classes("t-mono shrink-0 w-4 text-right")
                         ui.label(step).classes("t-label")
 
-            # Marker layout — right side
+            # Marker layout - right side
             with ui.column().classes("shrink-0"):
                 ui.label("Marker positions").classes("t-small mb-1")
                 ui.html(
@@ -931,7 +931,7 @@ def _reset_calibration():
 
 
 # ════════════════════════════════════════════════════════
-#  Page 4 — Settings
+#  Page 4 - Settings
 # ════════════════════════════════════════════════════════
 
 def build_settings_page():

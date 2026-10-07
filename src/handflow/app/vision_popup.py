@@ -1,4 +1,4 @@
-"""Vision popup — image + draggable crop + Gemini chat. Entire UI is raw HTML."""
+"""Vision popup - image + draggable crop + Gemini chat. Entire UI is raw HTML."""
 
 import asyncio
 import json
@@ -243,7 +243,7 @@ def create_popup(image_path: str, crop_coords: dict = None):
     # Layout: raw HTML left panel + NiceGUI right panel
     with ui.element("div").style("display:flex;width:100vw;height:100vh;overflow:hidden;"):
 
-        # LEFT — raw HTML image + crop box
+        # LEFT - raw HTML image + crop box
         with ui.element("div").style("width:62%;height:100vh;flex-shrink:0;background:#18171B;"):
             ui.html(f'''
                 <div style="height:100vh;display:flex;flex-direction:column;background:#18171B;">
@@ -286,7 +286,7 @@ def create_popup(image_path: str, crop_coords: dict = None):
                 </div>
             ''')
 
-        # RIGHT — Chat panel
+        # RIGHT - Chat panel
         with ui.element("div").style(
             "width:38%;height:100vh;background:#FAFAF9;border-left:1px solid #E8E6E1;"
             "display:flex;flex-direction:column;overflow:hidden;"
@@ -340,14 +340,14 @@ def create_popup(image_path: str, crop_coords: dict = None):
                 ui.button(icon="send", on_click=send).props("round unelevated").style(
                     "background:#E8590C;color:white;width:40px;height:40px;")
 
-    # Auto-analyze on load (silent — no user message shown)
+    # Auto-analyze on load (silent - no user message shown)
     if GEMINI_API_KEY:
         async def _auto():
             await asyncio.sleep(2.0)
             await analyze(silent=True)
         ui.timer(0.1, lambda: asyncio.create_task(_auto()), once=True)
 
-    # Crop box JS — uses pointer events + setPointerCapture (guaranteed to work)
+    # Crop box JS - uses pointer events + setPointerCapture (guaranteed to work)
     ui.add_body_html(f'''<script>
     (function() {{
         var _retries = 0;
@@ -386,7 +386,7 @@ def create_popup(image_path: str, crop_coords: dict = None):
                     sl = box.offsetLeft; st = box.offsetTop;
                     sw = box.offsetWidth; sh = box.offsetHeight;
 
-                    // Capture pointer — all future events go to this element
+                    // Capture pointer - all future events go to this element
                     box.setPointerCapture(e.pointerId);
                     document.body.style.userSelect = 'none';
                     console.log('Crop drag start:', mode);
@@ -489,7 +489,7 @@ def main():
     def open_app_window():
         import time
         time.sleep(1.5)
-        # Try Chrome/Chromium app mode first (cleanest — no tabs, no URL bar)
+        # Try Chrome/Chromium app mode first (cleanest - no tabs, no URL bar)
         chrome_paths = [
             "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome",
             "/Applications/Chromium.app/Contents/MacOS/Chromium",

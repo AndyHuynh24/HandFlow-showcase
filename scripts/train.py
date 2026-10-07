@@ -164,9 +164,9 @@ def main() -> None:
 
     logger.info(f"{'='*60}")
     if args.resume:
-        logger.info(f"🔄 HandFlow Training - RESUME MODE")
+        logger.info(f"HandFlow Training - RESUME MODE")
     else:
-        logger.info(f"🖐️ HandFlow Training - Unified Model (Both Hands)")
+        logger.info(f"HandFlow Training - Unified Model (Both Hands)")
     logger.info(f"{'='*60}")
     if args.resume:
         logger.info(f"Resume from: {args.resume}")
@@ -180,19 +180,19 @@ def main() -> None:
 
     logger.info("\n Loading preprocessed data from cache (both hands)...")
     x_train, x_val, y_train, y_val, actions = load_training_data(config=config)
-    logger.info("✅ Data is loaded and merged from both hands")
+    logger.info("Data is loaded and merged from both hands")
     logger.info(f"   Training: {len(x_train)} samples")
     logger.info(f"   Validation: {len(x_val)} samples")
     logger.info(f"   Data shape: {x_train.shape}")
-    logger.info(f"   ✅ Input dimension for model: {x_train.shape[-1]} features")
+    logger.info(f"   Input dimension for model: {x_train.shape[-1]} features")
 
     # Update input dim to config
     config.model.input_dim = x_train.shape[-1]
 
     if args.resume:
-        logger.info(f"\n🔄 Loading model from {args.resume}...")
+        logger.info(f"\nLoading model from {args.resume}...")
         model = keras.models.load_model(args.resume)
-        logger.info("✅ Model loaded successfully")
+        logger.info("Model loaded successfully")
 
         # Always recompile with fresh optimizer when resuming
         # (optimizer state from saved model is tied to old variable instances)
@@ -206,7 +206,7 @@ def main() -> None:
         )
         model.summary()
     else:
-        logger.info(f"\n🔨 Building {config.model.architecture.upper()} model...")
+        logger.info(f"\nBuilding {config.model.architecture.upper()} model...")
         model = build_model(config)
         model.summary()
 
@@ -229,11 +229,11 @@ def main() -> None:
         logger.info(f"   {name}: {value:.4f}")
 
     # Save model
-    logger.info(f"\n💾 Saving model to {output_path}")
+    logger.info(f"\nSaving model to {output_path}")
     output_path.parent.mkdir(parents=True, exist_ok=True)
     trainer.save(output_path)
 
-    logger.info("\n✅ Training complete!")
+    logger.info("\nTraining complete!")
     logger.info(f"   Best validation accuracy: {max(history.history['val_accuracy']):.4f}")
 
 

@@ -105,7 +105,7 @@ class PaperMacroPadFeedback:
             self._window_created = False
 
     def _draw_hover(self, label: str, button_num: int):
-        """Draw hover feedback with elegant styling."""
+        """Draw hover feedback."""
         if not self._canvas:
             return
 

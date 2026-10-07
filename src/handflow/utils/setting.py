@@ -96,7 +96,7 @@ class Setting(BaseModel):
     # This is separate from paper macropad sets and has its own button configuration
     screen_overlay_macropad: Optional[MacroPadSet] = None
 
-    # Knuckle macropad — palm-up hand turns knuckles into 6 buttons
+    # Knuckle macropad - palm-up hand turns knuckles into 6 buttons
     knuckle_macropad_enabled: bool = False
     knuckle_macropad_buttons: dict[int, MacroPadButton] = {}
 
