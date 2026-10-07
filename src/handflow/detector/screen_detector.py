@@ -83,32 +83,32 @@ class ArUcoScreenDetector:
         # Adaptive thresholding - more windows = better detection in varying light
         detector_params = cv2.aruco.DetectorParameters()
 
-        # --- Adaptive thresholding (avoid key-by-key binarization) ---
+        # Adaptive thresholding (avoid key-by-key binarization)
         detector_params.adaptiveThreshWinSizeMin = 7
         detector_params.adaptiveThreshWinSizeMax = 35
         detector_params.adaptiveThreshWinSizeStep = 6
 
-        # --- Marker size sanity (kills keyboard keys) ---
+        # Marker size sanity (kills keyboard keys)
         detector_params.minMarkerPerimeterRate = 0.05   # default 0.03
         detector_params.maxMarkerPerimeterRate = 4.0
 
-        # --- Geometry strictness (still tolerant to blur) ---
+        # Geometry strictness (still tolerant to blur)
         detector_params.polygonalApproxAccuracyRate = 0.05
 
-        # --- Corner refinement (important for jitter) ---
+        # Corner refinement (important for jitter)
         detector_params.cornerRefinementMethod = cv2.aruco.CORNER_REFINE_SUBPIX
         detector_params.cornerRefinementWinSize = 7
         detector_params.cornerRefinementMaxIterations = 30
 
-        # --- Marker separation (prevents grid confusion) ---
+        # Marker separation (prevents grid confusion)
         detector_params.minCornerDistanceRate = 0.05
         detector_params.minMarkerDistanceRate = 0.05
 
-        # --- Bit extraction (ID stability) ---
+        # Bit extraction (ID stability)
         detector_params.perspectiveRemovePixelPerCell = 6
         detector_params.perspectiveRemoveIgnoredMarginPerCell = 0.15
 
-        # --- Error correction (most important) ---
+        # Error correction (most important)
         detector_params.errorCorrectionRate = 0.5
         self._detector = cv2.aruco.ArucoDetector(self._aruco_dict, detector_params)
 
@@ -521,16 +521,12 @@ class ArUcoScreenDetector:
         src_pts = np.asarray(src_pts, dtype=np.float32)
         dst_pts = np.asarray(dst_pts, dtype=np.float32)
 
-        # -------------------------------
         # 4+ points → Homography
-        # -------------------------------
         if len(src_pts) >= 4:
             H, mask = cv2.findHomography(src_pts, dst_pts, cv2.RANSAC, 5.0)
             return H
 
-        # -------------------------------
         # 3 points → Affine
-        # -------------------------------
         if len(src_pts) == 3:
             A, _ = cv2.estimateAffine2D(src_pts, dst_pts)
             if A is None:
@@ -539,10 +535,8 @@ class ArUcoScreenDetector:
             H[:2, :] = A
             return H
 
-        # -------------------------------
         # 2 points → Similarity transform (translation + rotation + uniform scale)
         # This is better than translation-only for camera movement
-        # -------------------------------
         if len(src_pts) == 2:
             # Try estimating a similarity transform (4 DOF: tx, ty, scale, rotation)
             # This handles camera pan/tilt/zoom better than translation alone

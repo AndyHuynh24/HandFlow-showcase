@@ -59,7 +59,7 @@ def load_raw_data(
     for action in actions:
         action_path = data_path / action
         if not action_path.exists():
-            logger.info(f"⚠️ Warning: Action directory not found: {action_path}")
+            logger.info(f"Warning: Action directory not found: {action_path}")
             continue
 
         # Get all sequence directories
@@ -80,7 +80,7 @@ def load_raw_data(
                 # Store relative path from data_path's parent 
                 paths.append(str(seq_dir.relative_to(data_path.parent)))
         
-        logger.info(f"✅ Loaded {len(seq_dirs)} sequences for action '{action}'")
+        logger.info(f"Loaded {len(seq_dirs)} sequences for action '{action}'")
 
 
     sequences = np.array(sequences)
@@ -167,7 +167,7 @@ def save_processed_data(
     )
 
     size_mb = output_path.stat().st_size / 1024 / 1024
-    print(f"💾 Saved processed data: {output_path} ({size_mb:.2f} MB)")
+    print(f"Saved processed data: {output_path} ({size_mb:.2f} MB)")
 
 
 def get_config_hash(config: Config) -> str:

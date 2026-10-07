@@ -89,12 +89,12 @@ def validate_sequences(
 
     
     if len(sequences) > 0:
-        logger.info(f"✅ Valid: {len(valid_indices)}/{len(sequences)} ({len(valid_indices)/len(sequences):.1%})")
+        logger.info(f"Valid: {len(valid_indices)}/{len(sequences)} ({len(valid_indices)/len(sequences):.1%})")
     else:
-        logger.info(f"✅ Valid: 0/0 (0.0%)")
+        logger.info(f"Valid: 0/0 (0.0%)")
 
     if rejected_count > 0:
-        logger.info(f"❌ Rejected: {rejected_count} ({rejection_reasons})")
+        logger.info(f"Rejected: {rejected_count} ({rejection_reasons})")
     
     if paths is not None:
         return valid_sequences, valid_labels, valid_paths
@@ -143,7 +143,7 @@ def preprocess_hand(
 
     # Check if data exists
     if not data_path.exists():
-        logger.info(f"⚠️ Data path not found, skipping: {data_path}")
+        logger.info(f"Data path not found, skipping: {data_path}")
         return
 
     logger.info("\n1. Loading raw data...")
@@ -185,7 +185,7 @@ def preprocess_hand(
     val_path = output_dir / f"{hand}_val.npz"
     save_processed_data(val_path, X_val, y_val, actions, config_hash, paths=paths_val)
 
-    logger.info(f"\n✅ {hand.upper()} hand preprocessing complete!")
+    logger.info(f"\n{hand.upper()} hand preprocessing complete!")
 
 def main() -> None:
     """Main preprocessing function."""
@@ -202,7 +202,7 @@ def main() -> None:
     if (args.validation_split): 
         config.training.validation_split = args.validation_split
 
-    logger.info("🖐️ HandFlow Data Preprocessing")
+    logger.info("HandFlow Data Preprocessing")
     logger.info("=" * 60)
 
     logger.info(f"Config: {args.config or 'default'}")
@@ -224,7 +224,7 @@ def main() -> None:
         )
 
     logger.info("=" * 60)
-    logger.info("✅ All preprocessing complete!")
+    logger.info("All preprocessing complete!")
     logger.info("=" * 60)
 
 if __name__ == "__main__":

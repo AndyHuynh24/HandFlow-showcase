@@ -325,7 +325,7 @@ class GUIDataCollector:
 
         ret, frame = self.cap.read()
         if not ret:
-            # Don't stop on a single failed read — camera may need a moment
+            # Don't stop on a single failed read - camera may need a moment
             self.root.after(10, self.process_frame)
             return
 
@@ -352,7 +352,7 @@ class GUIDataCollector:
         if flip_v:
             frame = cv2.flip(frame, 0)
 
-        # 3. Create even smaller frame for MediaPipe (320x180) — same as detection
+        # 3. Create even smaller frame for MediaPipe (320x180) - same as detection
         frame_mp = cv2.resize(frame, (self._mp_process_width, self._mp_process_height), interpolation=cv2.INTER_NEAREST)
 
         # 4. Run MediaPipe on small frame (matching detection pipeline)
@@ -397,7 +397,7 @@ class GUIDataCollector:
     def handle_collection(self, image, results, flip_h, swap_hands):
         gesture = self.gesture_var.get()
 
-        # Check trigger flag — only start if not already recording
+        # Check trigger flag - only start if not already recording
         if self.trigger_record:
             if not self.is_recording:
                 self.is_recording = True
@@ -445,7 +445,7 @@ class GUIDataCollector:
             
             if self.frame_num >= self.sequence_length:
                 if self.zero_frame_count > 12:
-                    print(f"❌ Discarding {self.current_sequence_id}")
+                    print(f"Discarding {self.current_sequence_id}")
                     import shutil
                     if save_path.exists(): shutil.rmtree(save_path)
                 else:

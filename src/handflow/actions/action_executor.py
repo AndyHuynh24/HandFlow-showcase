@@ -146,9 +146,7 @@ class ActionExecutor:
         
         return ActionResult(True, f"Executing {len(actions)} action(s)")
     
-    # -------------------------------------------------
     #Click Actions (Platform-optimized)
-    # -------------------------------------------------
     def _action_none(self, value: str) -> ActionResult:
         """No action."""
         return ActionResult(True, "No action")
@@ -182,9 +180,7 @@ class ActionExecutor:
         pyautogui.doubleClick()
         return ActionResult(True, "Double click")
     
-    # -------------------------------------------------
     # Keyboard Actions
-    # -------------------------------------------------
     def _action_shortcut(self, value: str) -> ActionResult:
         """
         Execute keyboard shortcut.
@@ -285,9 +281,7 @@ class ActionExecutor:
 
 
     
-    # -------------------------------------------------
     # File/App Actions
-    # -------------------------------------------------
     def _action_open_file(self, value: str) -> ActionResult:
         """
         Open file or application.
@@ -311,9 +305,7 @@ class ActionExecutor:
         except Exception as e:
             return ActionResult(False, f"Open error: {e}")
     
-    # -------------------------------------------------
     # Scroll Actions (Single Increment)
-    # -------------------------------------------------
     def _action_scroll_up(self, value: str) -> ActionResult:
         """Single increment scroll up."""
         amount = int(value) if value.isdigit() else self.SCROLL_INCREMENT
@@ -326,9 +318,7 @@ class ActionExecutor:
         pyautogui.scroll(-amount)  # Negative = scroll down
         return ActionResult(True, f"Scroll down {amount}px")
     
-    # -------------------------------------------------
     # Zoom Actions (Single Keystroke)
-    # -------------------------------------------------
     def _action_zoom_in(self, value: str) -> ActionResult:
         """Single zoom in keystroke (Cmd+=)."""
         pyautogui.hotkey(*self.ZOOM_KEYS['in'])
@@ -339,9 +329,7 @@ class ActionExecutor:
         pyautogui.hotkey(*self.ZOOM_KEYS['out'])
         return ActionResult(True, "Zoom out")
     
-    # -------------------------------------------------
     # Media Controls
-    # -------------------------------------------------
     def _action_media(self, media_type: str) -> ActionResult:
         """Media control actions."""
         key = self.MEDIA_KEYS.get(media_type)
@@ -362,9 +350,7 @@ class ActionExecutor:
             return ActionResult(False, f"Unknown volume direction: {direction}")
         return ActionResult(True, f"Volume {direction}")
     
-    # -------------------------------------------------
     # Window/Desktop Actions
-    # -------------------------------------------------
     def _action_screenshot(self, value: str) -> ActionResult:
         """Take screenshot (macOS: Cmd+Shift+4 for region)."""
         if sys.platform == "darwin":
@@ -403,9 +389,7 @@ class ActionExecutor:
                 pyautogui.hotkey('win', 'ctrl', 'right')
         return ActionResult(True, f"Desktop {direction}")
     
-    # -------------------------------------------------
     # Utility Methods
-    # -------------------------------------------------
     @staticmethod
     def get_available_actions() -> list:
         """Get list of all available action types for UI dropdowns."""

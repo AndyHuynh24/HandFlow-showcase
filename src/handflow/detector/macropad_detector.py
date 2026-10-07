@@ -168,14 +168,10 @@ class MacroPadDetector:
 
         corners, ids = None, None
 
-        # -------------------------------------------------
         # Attempt 1: Standard grayscale
-        # -------------------------------------------------
         corners, ids, _ = self._detector.detectMarkers(gray)
 
-        # -------------------------------------------------
         # Attempt 2: If not enough markers, try with CLAHE (contrast enhancement)
-        # -------------------------------------------------
         if ids is None or len(ids) < 3:
             clahe = cv2.createCLAHE(clipLimit=2.0, tileGridSize=(8, 8))
             enhanced = clahe.apply(gray)
@@ -183,9 +179,7 @@ class MacroPadDetector:
             if ids2 is not None and (ids is None or len(ids2) > len(ids)):
                 corners, ids = corners2, ids2
 
-        # -------------------------------------------------
         # Attempt 3: If still not enough, try with slight blur (reduces noise)
-        # -------------------------------------------------
         if ids is None or len(ids) < 3:
             blurred = cv2.GaussianBlur(gray, (3, 3), 0)
             corners3, ids3, _ = self._detector.detectMarkers(blurred)
@@ -197,9 +191,7 @@ class MacroPadDetector:
             return False\
     
         
-        # -------------------------------------------------
         # 1. Map all detected markers by ID (with outlier rejection)
-        # -------------------------------------------------
         detected_data: Dict[int, Tuple[np.ndarray, np.ndarray]] = {} # id -> (center, corners)
         for i, marker_id in enumerate(ids.flatten()):
             marker_corners = corners[i][0]
@@ -218,9 +210,7 @@ class MacroPadDetector:
             # Update last known center for next frame's outlier rejection
             self._last_marker_centers[marker_id] = center.copy()
             
-        # -------------------------------------------------
         # 2. Identify Set ID (TL marker)
-        # -------------------------------------------------
         # Find which set marker is currently visible
         set_marker_id = None
         for sid in known_set_ids:
@@ -245,9 +235,7 @@ class MacroPadDetector:
 
         self._current_set_marker_id = set_marker_id
 
-        # -------------------------------------------------
         # 3. Map positions to IDs for this frame
-        # -------------------------------------------------
         # Use different IDs for screen overlay (set ID 20) vs paper macropad
         if set_marker_id == self.SCREEN_OVERLAY_SET_ID:
             # Screen overlay uses unique IDs (21-27)
@@ -269,9 +257,7 @@ class MacroPadDetector:
             self.POS_BR2: id_map[self.POS_BR2],
         }
         
-        # -------------------------------------------------
         # 4. Identify which logical corners are visible
-        # -------------------------------------------------
         # A logical corner is considered visible if either the primary or fallback marker is seen.
         logical_corners = set()
         
@@ -297,9 +283,7 @@ class MacroPadDetector:
             if mid in detected_data:
                 current_data_by_pos[pos] = detected_data[mid]
 
-        # -------------------------------------------------
         # 5. Extract detection region corners from visible markers
-        # -------------------------------------------------
         # Each corner of the detection region comes from a specific corner of a marker:
         # - Macropad TL = TL marker's top-right corner (index 1)
         # - Macropad TR = TR marker's top-left corner (index 0)
@@ -332,9 +316,7 @@ class MacroPadDetector:
         elif br2_marker_id in detected_data:
             region_corners['BR'] = detected_data[br2_marker_id][1][3]
 
-        # -------------------------------------------------
         # 6. Check how many corners we have and estimate if needed
-        # -------------------------------------------------
         self._estimated_pos_names = set()
 
         # Get middle marker edge points for estimation (if visible)
@@ -518,9 +500,7 @@ class MacroPadDetector:
 
         detection_region = self._smoothed_region.copy()
         
-        # -------------------------------------------------
         # 7. Compute variables for result
-        # -------------------------------------------------
         grid_cells = self._compute_grid_cells(detection_region, set_marker_id)
         
         marker_positions = {}

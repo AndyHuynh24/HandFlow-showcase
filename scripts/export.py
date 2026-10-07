@@ -54,17 +54,17 @@ def export_to_tflite(
     else:
         output_path = Path(output_path)
     
-    print(f"📥 Loading model from {input_path}...")
+    print(f"Loading model from {input_path}...")
     try:
         model = tf.keras.models.load_model(input_path)
     except TypeError as e:
         # Fallback: try loading without compilation
-        print(f"   ⚠️ Standard load failed, trying with compile=False...")
+        print(f"   Standard load failed, trying with compile=False...")
         try:
             model = tf.keras.models.load_model(input_path, compile=False)
         except Exception as e2:
             # Second fallback: try with safe_mode=False for newer Keras
-            print(f"   ⚠️ Still failing, trying with safe_mode=False...")
+            print(f"   Still failing, trying with safe_mode=False...")
             model = tf.keras.models.load_model(input_path, compile=False, safe_mode=False)
         model.compile(optimizer='adam', loss='categorical_crossentropy', metrics=['accuracy'])
     model.summary()
@@ -103,13 +103,13 @@ def export_to_tflite(
     output_size = output_path.stat().st_size / 1024
     reduction = (1 - output_size / input_size) * 100
     
-    print(f"\n✅ Exported to {output_path}")
+    print(f"\nExported to {output_path}")
     print(f"   Input size:  {input_size:.1f} KB")
     print(f"   Output size: {output_size:.1f} KB")
     print(f"   Size reduction: {reduction:.1f}%")
     
     # Verify
-    print("\n🔍 Verifying TFLite model...")
+    print("\nVerifying TFLite model...")
     interpreter = tf.lite.Interpreter(model_path=str(output_path))
     interpreter.allocate_tensors()
     
@@ -131,7 +131,7 @@ def main() -> None:
     setup_logging(level="INFO", log_file=log_file)
     logger = get_logger("handflow.export")
 
-    logger.info("🚀 HandFlow Model Export")
+    logger.info("HandFlow Model Export")
     logger.info("=" * 60)
     
     export_to_tflite(
@@ -140,7 +140,7 @@ def main() -> None:
     )
     
     logger.info("\n" + "=" * 60)
-    logger.info("✅ Export complete!")
+    logger.info("Export complete!")
     logger.info("\nNext steps:")
     logger.info("  Run main.py - it will auto-detect .tflite models")
 

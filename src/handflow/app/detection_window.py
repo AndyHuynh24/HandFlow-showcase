@@ -29,9 +29,7 @@ import numpy as np
 from handflow.utils import get_logger
 
 
-# ============================================================
 # macOS App Nap Prevention
-# ============================================================
 # When the app window loses focus, macOS throttles background
 # processes ("App Nap"), causing delayed gesture detection.
 # This uses multiple approaches to prevent throttling.

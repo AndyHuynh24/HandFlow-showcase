@@ -73,7 +73,7 @@ Examples:
         dest="learning_rate",
         help="Starting learning rate (overrides config)",
     )
-    # --- AkashTrainer sweep-friendly knobs (all optional; only override config when set) ---
+    # AkashTrainer sweep-friendly knobs (all optional; only override config when set)
     parser.add_argument(
         "--batch-size",
         type=int,
@@ -219,9 +219,9 @@ def main() -> None:
 
     logger.info(f"{'='*60}")
     if args.resume:
-        logger.info(f"🔄 HandFlow Training - RESUME MODE")
+        logger.info(f"HandFlow Training - RESUME MODE")
     else:
-        logger.info(f"🖐️ HandFlow Training - Unified Model (Both Hands)")
+        logger.info(f"HandFlow Training - Unified Model (Both Hands)")
     logger.info(f"{'='*60}")
     if args.resume:
         logger.info(f"Resume from: {args.resume}")
@@ -235,19 +235,19 @@ def main() -> None:
 
     logger.info("\n Loading preprocessed data from cache (both hands)...")
     x_train, x_val, y_train, y_val, actions = load_training_data(config=config)
-    logger.info("✅ Data is loaded and merged from both hands")
+    logger.info("Data is loaded and merged from both hands")
     logger.info(f"   Training: {len(x_train)} samples")
     logger.info(f"   Validation: {len(x_val)} samples")
     logger.info(f"   Data shape: {x_train.shape}")
-    logger.info(f"   ✅ Input dimension for model: {x_train.shape[-1]} features")
+    logger.info(f"   Input dimension for model: {x_train.shape[-1]} features")
 
     # Update input dim to config
     config.model.input_dim = x_train.shape[-1]
 
     if args.resume:
-        logger.info(f"\n🔄 Loading model from {args.resume}...")
+        logger.info(f"\nLoading model from {args.resume}...")
         model = keras.models.load_model(args.resume)
-        logger.info("✅ Model loaded successfully")
+        logger.info("Model loaded successfully")
 
         # Always recompile with fresh optimizer when resuming
         # (optimizer state from saved model is tied to old variable instances)
@@ -261,7 +261,7 @@ def main() -> None:
         )
         model.summary()
     else:
-        logger.info(f"\n🔨 Building {config.model.architecture.upper()} model...")
+        logger.info(f"\nBuilding {config.model.architecture.upper()} model...")
         model = build_model(config)
         model.summary()
 
@@ -284,14 +284,14 @@ def main() -> None:
         logger.info(f"   {name}: {value:.4f}")
 
     # Save model
-    logger.info(f"\n💾 Saving model to {output_path}")
+    logger.info(f"\nSaving model to {output_path}")
     output_path.parent.mkdir(parents=True, exist_ok=True)
     trainer.save(output_path)
 
-    logger.info("\n✅ Training complete!")
+    logger.info("\nTraining complete!")
     logger.info(f"   Best validation accuracy: {max(history.history['val_accuracy']):.4f}")
 
-    # --- AkashTrainer integration ----------------------------------------------
+    # AkashTrainer integration
     # When this script is run inside the AkashTrainer container (or whenever
     # --output-dir is set), write a results.json + copy the trained model into
     # that directory. The container packages anything in /output/ and pushes it
@@ -315,7 +315,7 @@ def _write_sweep_results(output_dir, args, config, history, metrics, model_path,
         try:
             os.makedirs(output_dir, exist_ok=True)
         except OSError:
-            logger.info(f"Skipping sweep results — {output_dir} is not writable")
+            logger.info(f"Skipping sweep results - {output_dir} is not writable")
             return
 
     h = history.history if hasattr(history, "history") else {}
@@ -328,14 +328,14 @@ def _write_sweep_results(output_dir, args, config, history, metrics, model_path,
         return [float(x) for x in (h.get(key) or [])]
 
     results = {
-        # Scalars — these show up as sortable columns on the sweep leaderboard.
+        # Scalars - these show up as sortable columns on the sweep leaderboard.
         "val_accuracy": _last("val_accuracy"),
         "val_loss": _last("val_loss"),
         "train_accuracy": _last("accuracy"),
         "train_loss": _last("loss"),
         "best_val_accuracy": float(max(h["val_accuracy"])) if h.get("val_accuracy") else None,
         "epochs_trained": len(h.get("loss", [])),
-        # Arrays — render as overlaid curves on the run detail page.
+        # Arrays - render as overlaid curves on the run detail page.
         "val_acc_curve": _arr("val_accuracy"),
         "val_loss_curve": _arr("val_loss"),
         "train_acc_curve": _arr("accuracy"),
@@ -358,14 +358,14 @@ def _write_sweep_results(output_dir, args, config, history, metrics, model_path,
     results_path = os.path.join(output_dir, "results.json")
     with open(results_path, "w") as f:
         json.dump(results, f, indent=2)
-    logger.info(f"✅ Wrote sweep results → {results_path}")
+    logger.info(f"Wrote sweep results → {results_path}")
 
     # Copy the trained model alongside so the output branch has both
     if model_path and os.path.exists(model_path):
         try:
             dest = os.path.join(output_dir, os.path.basename(str(model_path)))
             shutil.copy2(str(model_path), dest)
-            logger.info(f"✅ Copied model → {dest}")
+            logger.info(f"Copied model → {dest}")
         except (OSError, shutil.SameFileError) as e:
             logger.warning(f"Could not copy model to {output_dir}: {e}")
 

@@ -22,7 +22,7 @@ from handflow.detector import ArUcoScreenDetector, MacroPadDetector
 
 
 class Colors:
-    """Color palette for elegant visualization."""
+    """Color palette for visualization."""
     # Main colors (BGR format)
     PRIMARY = (255, 180, 0)      # Cyan-ish blue
     SECONDARY = (180, 255, 0)   # Lime green
@@ -93,14 +93,14 @@ def draw_rounded_rect(
     cv2.addWeighted(overlay, alpha, frame, 1 - alpha, 0, frame)
 
 
-def draw_elegant_landmark(
+def draw_landmark(
     frame: np.ndarray,
     x: int, y: int,
     color: Tuple[int, int, int],
     size: int = 4,
     glow: bool = True
 ):
-    """Draw an elegant landmark point with optional glow effect."""
+    """Draw a landmark point with optional glow effect."""
     if glow:
         # Outer glow
         cv2.circle(frame, (x, y), size + 3, (*color[:3],), 1, cv2.LINE_AA)
@@ -110,14 +110,14 @@ def draw_elegant_landmark(
     cv2.circle(frame, (x - 1, y - 1), max(1, size // 2), (255, 255, 255), -1, cv2.LINE_AA)
 
 
-def draw_elegant_connection(
+def draw_connection(
     frame: np.ndarray,
     pt1: Tuple[int, int],
     pt2: Tuple[int, int],
     color: Tuple[int, int, int],
     thickness: int = 2
 ):
-    """Draw an elegant connection line with anti-aliasing."""
+    """Draw a connection line with anti-aliasing."""
     cv2.line(frame, pt1, pt2, color, thickness, cv2.LINE_AA)
 
 
@@ -140,12 +140,12 @@ def draw_touch_effect(
     cv2.circle(frame, (x, y), int(5 * intensity), (255, 255, 255), -1, cv2.LINE_AA)
 
 
-def draw_elegant_aruco_screen(
+def draw_aruco_screen(
     frame: np.ndarray,
     detector: ArUcoScreenDetector,
     finger_pos: Optional[Tuple[int, int]] = None
 ):
-    """Draw elegant ArUco screen boundary visualization."""
+    """Draw ArUco screen boundary visualization."""
     if not detector.is_valid:
         return
 
@@ -176,7 +176,7 @@ def draw_elegant_aruco_screen(
     # Main boundary
     cv2.polylines(frame, [pts], True, boundary_color, 2, cv2.LINE_AA)
 
-    # Draw corner markers (small, elegant)
+    # Draw corner markers (small)
     labels = ['TL', 'TR', 'BR', 'BL']
     for i, corner in enumerate(corners):
         cx, cy = int(corner[0]), int(corner[1])
@@ -201,14 +201,14 @@ def draw_elegant_aruco_screen(
                 cv2.line(frame, (fx, fy - 8), (fx, fy + 8), (0, 255, 100), 1, cv2.LINE_AA)
 
 
-def draw_elegant_macropad(
+def draw_macropad(
     frame: np.ndarray,
     detector: MacroPadDetector,
     finger_pos: Optional[Tuple[int, int]] = None,
     hovered_button: Optional[int] = None,
     button_names: Optional[List[str]] = None
 ):
-    """Draw elegant macropad grid visualization."""
+    """Draw macropad grid visualization."""
     if not detector.is_valid:
         return
 
@@ -285,7 +285,7 @@ HAND_CONNECTIONS = [
 FINGERTIPS = [4, 8, 12, 16, 20]
 
 
-def draw_elegant_hand(
+def draw_hand(
     frame: np.ndarray,
     landmarks: List[Tuple[int, int]],
     handedness: str,
@@ -293,7 +293,7 @@ def draw_elegant_hand(
     confidence: float = 0.0,
     show_gesture_label: bool = False
 ):
-    """Draw elegant hand visualization with gesture info."""
+    """Draw hand visualization with gesture info."""
     h, w = frame.shape[:2]
 
     # Choose color based on hand
@@ -317,16 +317,16 @@ def draw_elegant_hand(
             pt2 = landmarks[conn[1]]
             # Gradient thickness - thinner at fingertips
             thickness = 2 if conn[1] in FINGERTIPS else 3
-            draw_elegant_connection(frame, pt1, pt2, base_color, thickness)
+            draw_connection(frame, pt1, pt2, base_color, thickness)
 
     # Draw landmarks
     for i, (x, y) in enumerate(landmarks):
         if i == 0:  # Wrist - larger
-            draw_elegant_landmark(frame, x, y, base_color, size=6, glow=True)
+            draw_landmark(frame, x, y, base_color, size=6, glow=True)
         elif i in FINGERTIPS:  # Fingertips - medium with glow
-            draw_elegant_landmark(frame, x, y, accent_color, size=5, glow=True)
+            draw_landmark(frame, x, y, accent_color, size=5, glow=True)
         else:  # Joints - small
-            draw_elegant_landmark(frame, x, y, base_color, size=3, glow=False)
+            draw_landmark(frame, x, y, base_color, size=3, glow=False)
 
     # Draw touch effect at index fingertip when touch gesture detected
     if gesture in ('touch', 'touch_hold') and len(landmarks) > 8:
@@ -451,7 +451,7 @@ def draw_info_panel(
     frame_num: int,
     total_frames: int
 ):
-    """Draw elegant info panel in corner."""
+    """Draw info panel in corner."""
     h, w = frame.shape[:2]
 
     # Panel dimensions
@@ -514,7 +514,7 @@ def draw_info_panel(
 
 
 class VideoProcessor:
-    """Full HandFlow video processor with elegant visualization."""
+    """Full HandFlow video processor with visualization."""
 
     def __init__(
         self,
@@ -842,8 +842,8 @@ class VideoProcessor:
                 # Show label only while counter is active
                 show_label = self.gesture_display_counters[handedness] > 0
 
-                # Draw elegant hand
-                draw_elegant_hand(
+                # Draw hand
+                draw_hand(
                     output, landmarks, handedness,
                     gesture=display_gesture,
                     confidence=conf,
@@ -861,13 +861,13 @@ class VideoProcessor:
             if self.macropad_detector.is_valid:
                 self.hovered_button = self.macropad_detector.get_button_at_point(self.current_finger_pos)
 
-        # Draw ArUco screen boundary (elegant, subtle)
+        # Draw ArUco screen boundary (subtle)
         if self.aruco_detector is not None and not self.minimal_mode:
-            draw_elegant_aruco_screen(output, self.aruco_detector, self.current_finger_pos)
+            draw_aruco_screen(output, self.aruco_detector, self.current_finger_pos)
 
-        # Draw MacroPad grid (elegant, subtle)
+        # Draw MacroPad grid (subtle)
         if self.macropad_detector is not None and not self.minimal_mode:
-            draw_elegant_macropad(
+            draw_macropad(
                 output,
                 self.macropad_detector,
                 self.current_finger_pos,
